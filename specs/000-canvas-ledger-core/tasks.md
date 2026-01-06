@@ -555,14 +555,16 @@
 
 **Purpose**: Final improvements across all phases.
 
-- [ ] T093 [P] Review and improve error messages across all commands
-- [ ] T094 [P] Add `--quiet` flag to commands that support it (suppress non-essential output)
-- [ ] T095 [P] Add `--verbose` / `-v` flag for debug output
-- [ ] T096 [P] Review logging: ensure no secrets logged, appropriate levels
-- [ ] T097 [P] Run full test suite, fix any failures
-- [ ] T098 [P] Create README.md with quickstart (config, first ingest, first query)
-- [ ] T099 Review CLI help text for all commands
-- [ ] T100 Final smoke test: full workflow from config → catalog ingest → deep ingest → annotations → queries → exports
+- [X] T093 [P] Review and improve error messages across all commands
+- [X] T094 [P] Add `--quiet` flag to commands that support it (suppress non-essential output)
+- [X] T095 [P] Add `--verbose` / `-v` flag for debug output
+- [X] T096 [P] Review logging: ensure no secrets logged, appropriate levels
+- [X] T097 [P] Run full test suite, fix any failures
+- [X] T098 [P] Create README.md with quickstart (config, first ingest, first query)
+- [X] T099 Review CLI help text for all commands
+- [X] T100 Final smoke test: full workflow from config → catalog ingest → deep ingest → annotations → queries → exports
+
+**Checkpoint**: Phase 7 complete. All polish tasks completed.
 
 ---
 

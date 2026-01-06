@@ -5,6 +5,7 @@ Provides the root Typer application with version flag and error handling.
 
 from __future__ import annotations
 
+import logging
 from typing import Never
 
 import typer
@@ -27,14 +28,35 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
+def verbose_callback(value: bool) -> None:
+    """Enable verbose/debug output."""
+    if value:
+        # Configure root logger for debug output
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%H:%M:%S",
+        )
+        # Also enable debug for cl modules specifically
+        logging.getLogger("cl").setLevel(logging.DEBUG)
+
+
 @app.callback()
 def main(
     version: bool | None = typer.Option(
         None,
         "--version",
-        "-v",
+        "-V",
         help="Show version and exit.",
         callback=version_callback,
+        is_eager=True,
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose/debug output.",
+        callback=verbose_callback,
         is_eager=True,
     ),
 ) -> None:
