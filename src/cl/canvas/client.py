@@ -8,6 +8,7 @@ All API calls are GET requests - cl never mutates Canvas state.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -15,9 +16,9 @@ from typing import TYPE_CHECKING
 from canvasapi import Canvas
 from canvasapi.exceptions import CanvasException, InvalidAccessToken, ResourceDoesNotExist
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
-    from canvasapi.course import Course as CanvasCourse
-    from canvasapi.enrollment import Enrollment as CanvasEnrollmentObj
     from canvasapi.enrollment_term import EnrollmentTerm
 
 
@@ -97,35 +98,31 @@ class CanvasClient:
         except (ValueError, TypeError):
             return None
 
-    def _extract_enrollments(self, course: CanvasCourse) -> list[EnrollmentData]:
-        """Extract enrollment data from a course object."""
-        enrollments: list[EnrollmentData] = []
+    def _fetch_my_enrollments(self) -> dict[int, list[EnrollmentData]]:
+        """Fetch all enrollments for the current user.
 
-        # The enrollments attribute is populated when include[]=enrollments is used
-        raw_enrollments: list[CanvasEnrollmentObj] = getattr(course, "enrollments", []) or []
+        Returns:
+            Dict mapping course_id to list of EnrollmentData for that course.
+        """
+        user = self._canvas.get_current_user()
+        enrollments_by_course: dict[int, list[EnrollmentData]] = {}
 
-        for enrollment in raw_enrollments:
-            # Handle both dict and object access patterns
-            if isinstance(enrollment, dict):
-                enrollment_id = enrollment.get("id")
-                role = enrollment.get("role", enrollment.get("type", "unknown"))
-                state = enrollment.get("enrollment_state", "unknown")
-            else:
-                enrollment_id = getattr(enrollment, "id", None)
-                role = getattr(enrollment, "role", getattr(enrollment, "type", "unknown"))
-                state = getattr(enrollment, "enrollment_state", "unknown")
+        # Request all enrollment states, not just active
+        all_states = ["active", "invited", "creation_pending", "rejected", "completed", "inactive"]
+        for enrollment in user.get_enrollments(state=all_states):
+            course_id = int(enrollment.course_id)
+            enrollment_data = EnrollmentData(
+                canvas_enrollment_id=int(enrollment.id),
+                role=str(getattr(enrollment, "role", "unknown")),
+                enrollment_state=str(getattr(enrollment, "enrollment_state", "unknown")),
+                course_id=course_id,
+            )
 
-            if enrollment_id:
-                enrollments.append(
-                    EnrollmentData(
-                        canvas_enrollment_id=int(enrollment_id),
-                        role=str(role),
-                        enrollment_state=str(state),
-                        course_id=int(course.id),
-                    )
-                )
+            if course_id not in enrollments_by_course:
+                enrollments_by_course[course_id] = []
+            enrollments_by_course[course_id].append(enrollment_data)
 
-        return enrollments
+        return enrollments_by_course
 
     def list_my_courses(self) -> list[CourseData]:
         """List all courses visible to the authenticated user.
@@ -141,13 +138,25 @@ class CanvasClient:
             CanvasClientError: For other API errors.
         """
         try:
-            # Request courses with enrollments included
+            # First, fetch all enrollments with proper IDs
+            enrollments_by_course = self._fetch_my_enrollments()
+
+            # Request courses with term info
             courses = self._canvas.get_current_user().get_courses(
-                include=["term", "enrollments"],
+                include=["term"],
             )
 
             result: list[CourseData] = []
+            skipped_count = 0
             for course in courses:
+                # Skip courses with restricted access (no details available)
+                if getattr(course, "access_restricted_by_date", False):
+                    skipped_count += 1
+                    logger.warning(
+                        "Skipping course %s: access restricted by date", course.id
+                    )
+                    continue
+
                 # Extract term ID if available
                 term_id: int | None = None
                 term = getattr(course, "term", None)
@@ -157,8 +166,9 @@ class CanvasClient:
                     else:
                         term_id = getattr(term, "id", None)
 
-                # Extract enrollments for this user
-                enrollments = self._extract_enrollments(course)
+                # Look up enrollments for this course
+                course_id = int(course.id)
+                enrollments = enrollments_by_course.get(course_id, [])
 
                 result.append(
                     CourseData(
@@ -169,6 +179,11 @@ class CanvasClient:
                         term_id=int(term_id) if term_id else None,
                         enrollments=enrollments,
                     )
+                )
+
+            if skipped_count > 0:
+                logger.info(
+                    "Skipped %d course(s) due to date-restricted access", skipped_count
                 )
 
             return result

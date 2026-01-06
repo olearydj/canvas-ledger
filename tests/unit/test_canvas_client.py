@@ -53,15 +53,36 @@ class MockEnrollmentTerm:
         self.end_at = end_at
 
 
+class MockEnrollment:
+    """Mock Canvas enrollment object."""
+
+    def __init__(
+        self,
+        enrollment_id: int,
+        course_id: int,
+        role: str = "StudentEnrollment",
+        enrollment_state: str = "active",
+    ):
+        self.id = enrollment_id
+        self.course_id = course_id
+        self.role = role
+        self.enrollment_state = enrollment_state
+
+
 class MockUser:
     """Mock Canvas user object."""
 
-    def __init__(self, courses: list):
+    def __init__(self, courses: list, enrollments: list | None = None):
         self._courses = courses
+        self._enrollments = enrollments or []
 
     def get_courses(self, include: list | None = None):  # noqa: ARG002
         """Return mock courses."""
         return iter(self._courses)
+
+    def get_enrollments(self, state: list | None = None):  # noqa: ARG002
+        """Return mock enrollments."""
+        return iter(self._enrollments)
 
 
 class MockAccount:
@@ -132,7 +153,7 @@ class TestListMyCourses:
 
     def test_list_my_courses_empty(self, mock_canvas):
         """Should return empty list when no courses."""
-        mock_user = MockUser(courses=[])
+        mock_user = MockUser(courses=[], enrollments=[])
         mock_canvas.return_value.get_current_user.return_value = mock_user
 
         client = CanvasClient("https://canvas.example.edu", "token")
@@ -148,7 +169,6 @@ class TestListMyCourses:
                 name="Test Course",
                 code="TST101",
                 term={"id": 1, "name": "Fall 2024"},
-                enrollments=[{"id": 456, "role": "teacher", "enrollment_state": "active"}],
             ),
             MockCourse(
                 course_id=789,
@@ -157,7 +177,10 @@ class TestListMyCourses:
                 workflow_state="completed",
             ),
         ]
-        mock_user = MockUser(courses=mock_courses)
+        mock_enrollments = [
+            MockEnrollment(enrollment_id=456, course_id=123, role="teacher", enrollment_state="active"),
+        ]
+        mock_user = MockUser(courses=mock_courses, enrollments=mock_enrollments)
         mock_canvas.return_value.get_current_user.return_value = mock_user
 
         client = CanvasClient("https://canvas.example.edu", "token")
@@ -174,25 +197,25 @@ class TestListMyCourses:
         assert len(courses[0].enrollments) == 1
         assert courses[0].enrollments[0].role == "teacher"
 
-        # Second course
+        # Second course (no enrollment)
         assert courses[1].canvas_course_id == 789
         assert courses[1].name == "Another Course"
         assert courses[1].workflow_state == "completed"
         assert courses[1].term_id is None
 
-    def test_list_my_courses_handles_dict_enrollments(self, mock_canvas):
-        """Should handle enrollments as dict objects."""
+    def test_list_my_courses_handles_multiple_enrollments(self, mock_canvas):
+        """Should handle multiple enrollments per course."""
         mock_courses = [
             MockCourse(
                 course_id=123,
                 name="Test Course",
-                enrollments=[
-                    {"id": 100, "role": "StudentEnrollment", "enrollment_state": "active"},
-                    {"id": 101, "type": "TeacherEnrollment", "enrollment_state": "invited"},
-                ],
             ),
         ]
-        mock_user = MockUser(courses=mock_courses)
+        mock_enrollments = [
+            MockEnrollment(enrollment_id=100, course_id=123, role="StudentEnrollment", enrollment_state="active"),
+            MockEnrollment(enrollment_id=101, course_id=123, role="TeacherEnrollment", enrollment_state="invited"),
+        ]
+        mock_user = MockUser(courses=mock_courses, enrollments=mock_enrollments)
         mock_canvas.return_value.get_current_user.return_value = mock_user
 
         client = CanvasClient("https://canvas.example.edu", "token")
