@@ -13,7 +13,16 @@ from typing import TYPE_CHECKING, Any
 from sqlmodel import Session, select
 
 from cl.annotations.models import InvolvementAnnotation, LeadInstructorAnnotation
-from cl.ledger.models import Enrollment, Offering, Person, Section, Term, UserEnrollment
+from cl.ledger.models import (
+    ChangeLog,
+    Enrollment,
+    EntityType,
+    Offering,
+    Person,
+    Section,
+    Term,
+    UserEnrollment,
+)
 from cl.ledger.store import get_session
 
 if TYPE_CHECKING:
@@ -697,4 +706,279 @@ def get_offering_instructors(
                 "source": "enrollment",  # Distinguishes from user_enrollment
             }
             for enrollment, person in results
+        ]
+
+
+# =============================================================================
+# Phase 4: Drift/History Queries
+# =============================================================================
+
+
+@dataclass
+class ChangeEntry:
+    """A single change recorded in the change log.
+
+    Represents one field change for an entity.
+    """
+
+    entity_type: str
+    entity_canvas_id: int
+    field_name: str
+    old_value: str | None
+    new_value: str | None
+    ingest_run_id: int
+    observed_at: datetime
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "entity_type": self.entity_type,
+            "entity_canvas_id": self.entity_canvas_id,
+            "field_name": self.field_name,
+            "old_value": self.old_value,
+            "new_value": self.new_value,
+            "ingest_run_id": self.ingest_run_id,
+            "observed_at": self.observed_at.isoformat() if self.observed_at else None,
+        }
+
+
+@dataclass
+class PersonDriftEntry:
+    """Drift information for a person across their enrollments.
+
+    Groups changes by enrollment for easier understanding.
+    """
+
+    canvas_user_id: int
+    person_name: str | None
+    changes: list[ChangeEntry]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "canvas_user_id": self.canvas_user_id,
+            "person_name": self.person_name,
+            "changes": [c.to_dict() for c in self.changes],
+            "total_changes": len(self.changes),
+        }
+
+
+@dataclass
+class OfferingDriftEntry:
+    """Drift information for an offering.
+
+    Includes changes to enrollments, sections, and the offering itself.
+    """
+
+    canvas_course_id: int
+    offering_name: str
+    offering_code: str | None
+    changes: list[ChangeEntry]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "canvas_course_id": self.canvas_course_id,
+            "offering_name": self.offering_name,
+            "offering_code": self.offering_code,
+            "changes": [c.to_dict() for c in self.changes],
+            "total_changes": len(self.changes),
+        }
+
+
+def get_person_drift(
+    db_path: Path | str,
+    canvas_user_id: int,
+) -> PersonDriftEntry | None:
+    """Get drift history for a person.
+
+    Returns all changes recorded for this person and their enrollments.
+
+    Args:
+        db_path: Path to the SQLite database.
+        canvas_user_id: Canvas user ID.
+
+    Returns:
+        PersonDriftEntry with all changes, or None if person not found.
+    """
+    with get_session(db_path) as session:
+        # Get the person
+        person_stmt = select(Person).where(Person.canvas_user_id == canvas_user_id)
+        person = session.exec(person_stmt).first()
+
+        if person is None:
+            return None
+
+        # Get changes for this person
+        person_changes_stmt = (
+            select(ChangeLog)
+            .where(ChangeLog.entity_type == EntityType.PERSON)
+            .where(ChangeLog.entity_canvas_id == canvas_user_id)
+            .order_by(ChangeLog.observed_at.desc())  # type: ignore[attr-defined]
+        )
+        person_changes = list(session.exec(person_changes_stmt).all())
+
+        # Get this person's enrollment IDs
+        enrollment_stmt = select(Enrollment).where(Enrollment.person_id == person.id)
+        enrollments = session.exec(enrollment_stmt).all()
+        enrollment_ids = [e.canvas_enrollment_id for e in enrollments]
+
+        # Get changes for this person's enrollments
+        enrollment_changes: list[ChangeLog] = []
+        if enrollment_ids:
+            enrollment_changes_stmt = (
+                select(ChangeLog)
+                .where(ChangeLog.entity_type == EntityType.ENROLLMENT)
+                .where(ChangeLog.entity_canvas_id.in_(enrollment_ids))  # type: ignore[attr-defined]
+                .order_by(ChangeLog.observed_at.desc())  # type: ignore[attr-defined]
+            )
+            enrollment_changes = list(session.exec(enrollment_changes_stmt).all())
+
+        # Combine and convert to ChangeEntry
+        all_changes = person_changes + enrollment_changes
+        change_entries = [
+            ChangeEntry(
+                entity_type=c.entity_type.value,
+                entity_canvas_id=c.entity_canvas_id,
+                field_name=c.field_name,
+                old_value=c.old_value,
+                new_value=c.new_value,
+                ingest_run_id=c.ingest_run_id,
+                observed_at=c.observed_at,
+            )
+            for c in all_changes
+        ]
+
+        # Sort by observed_at descending
+        change_entries.sort(key=lambda x: x.observed_at, reverse=True)
+
+        return PersonDriftEntry(
+            canvas_user_id=canvas_user_id,
+            person_name=person.name,
+            changes=change_entries,
+        )
+
+
+def get_offering_drift(
+    db_path: Path | str,
+    canvas_course_id: int,
+) -> OfferingDriftEntry | None:
+    """Get drift history for an offering.
+
+    Returns all changes recorded for this offering, its sections, and enrollments.
+
+    Args:
+        db_path: Path to the SQLite database.
+        canvas_course_id: Canvas course ID.
+
+    Returns:
+        OfferingDriftEntry with all changes, or None if offering not found.
+    """
+    with get_session(db_path) as session:
+        # Get the offering
+        offering_stmt = select(Offering).where(Offering.canvas_course_id == canvas_course_id)
+        offering = session.exec(offering_stmt).first()
+
+        if offering is None:
+            return None
+
+        # Get changes for this offering
+        offering_changes_stmt = (
+            select(ChangeLog)
+            .where(ChangeLog.entity_type == EntityType.OFFERING)
+            .where(ChangeLog.entity_canvas_id == canvas_course_id)
+            .order_by(ChangeLog.observed_at.desc())  # type: ignore[attr-defined]
+        )
+        offering_changes = list(session.exec(offering_changes_stmt).all())
+
+        # Get section IDs for this offering
+        section_stmt = select(Section).where(Section.offering_id == offering.id)
+        sections = session.exec(section_stmt).all()
+        section_canvas_ids = [s.canvas_section_id for s in sections]
+
+        # Get changes for sections
+        section_changes: list[ChangeLog] = []
+        if section_canvas_ids:
+            section_changes_stmt = (
+                select(ChangeLog)
+                .where(ChangeLog.entity_type == EntityType.SECTION)
+                .where(ChangeLog.entity_canvas_id.in_(section_canvas_ids))  # type: ignore[attr-defined]
+                .order_by(ChangeLog.observed_at.desc())  # type: ignore[attr-defined]
+            )
+            section_changes = list(session.exec(section_changes_stmt).all())
+
+        # Get enrollment IDs for this offering
+        enrollment_stmt = select(Enrollment).where(Enrollment.offering_id == offering.id)
+        enrollments = session.exec(enrollment_stmt).all()
+        enrollment_ids = [e.canvas_enrollment_id for e in enrollments]
+
+        # Get changes for enrollments
+        enrollment_changes: list[ChangeLog] = []
+        if enrollment_ids:
+            enrollment_changes_stmt = (
+                select(ChangeLog)
+                .where(ChangeLog.entity_type == EntityType.ENROLLMENT)
+                .where(ChangeLog.entity_canvas_id.in_(enrollment_ids))  # type: ignore[attr-defined]
+                .order_by(ChangeLog.observed_at.desc())  # type: ignore[attr-defined]
+            )
+            enrollment_changes = list(session.exec(enrollment_changes_stmt).all())
+
+        # Combine and convert to ChangeEntry
+        all_changes = offering_changes + section_changes + enrollment_changes
+        change_entries = [
+            ChangeEntry(
+                entity_type=c.entity_type.value,
+                entity_canvas_id=c.entity_canvas_id,
+                field_name=c.field_name,
+                old_value=c.old_value,
+                new_value=c.new_value,
+                ingest_run_id=c.ingest_run_id,
+                observed_at=c.observed_at,
+            )
+            for c in all_changes
+        ]
+
+        # Sort by observed_at descending
+        change_entries.sort(key=lambda x: x.observed_at, reverse=True)
+
+        return OfferingDriftEntry(
+            canvas_course_id=canvas_course_id,
+            offering_name=offering.name,
+            offering_code=offering.code,
+            changes=change_entries,
+        )
+
+
+def get_changes_by_ingest_run(
+    db_path: Path | str,
+    ingest_run_id: int,
+) -> list[ChangeEntry]:
+    """Get all changes recorded during a specific ingest run.
+
+    Args:
+        db_path: Path to the SQLite database.
+        ingest_run_id: The ingest run ID.
+
+    Returns:
+        List of ChangeEntry objects for that run.
+    """
+    with get_session(db_path) as session:
+        stmt = (
+            select(ChangeLog)
+            .where(ChangeLog.ingest_run_id == ingest_run_id)
+            .order_by(ChangeLog.entity_type, ChangeLog.entity_canvas_id)  # type: ignore[arg-type]
+        )
+        changes = session.exec(stmt).all()
+
+        return [
+            ChangeEntry(
+                entity_type=c.entity_type.value,
+                entity_canvas_id=c.entity_canvas_id,
+                field_name=c.field_name,
+                old_value=c.old_value,
+                new_value=c.new_value,
+                ingest_run_id=c.ingest_run_id,
+                observed_at=c.observed_at,
+            )
+            for c in changes
         ]

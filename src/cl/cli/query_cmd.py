@@ -16,9 +16,11 @@ from cl.export.formatters import format_output
 from cl.ledger.queries import (
     get_my_timeline,
     get_offering_by_canvas_id,
+    get_offering_drift,
     get_offering_responsibility,
     get_offering_roster,
     get_person_by_canvas_id,
+    get_person_drift,
     get_person_history,
 )
 
@@ -408,3 +410,168 @@ def person(
                 f"    - {entry.offering_name}{section_info}\n"
                 f"      {entry.role}, {entry.enrollment_state}{grade_info}"
             )
+
+
+# =============================================================================
+# Drift Subcommands
+# =============================================================================
+
+
+drift_app = typer.Typer(
+    name="drift",
+    help="Query change history (drift) for entities.",
+    no_args_is_help=True,
+)
+app.add_typer(drift_app)
+
+
+@drift_app.command("person")
+def drift_person(
+    person_id: Annotated[
+        int,
+        typer.Argument(help="Canvas user ID of the person."),
+    ],
+    fmt: Annotated[
+        OutputFormat,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format.",
+        ),
+    ] = OutputFormat.table,
+) -> None:
+    """Query drift history for a person.
+
+    Shows all recorded changes for the person and their enrollments
+    across ingestion runs. Useful for understanding how a student's
+    enrollment status or grades have changed over time.
+
+    Examples:
+        cl query drift person 12345
+        cl query drift person 12345 --format json
+    """
+    settings = load_settings()
+
+    if not settings.db_path.exists():
+        cli_error(f"Database not found at {settings.db_path}. Run 'cl db migrate' to initialize.")
+
+    drift = get_person_drift(settings.db_path, person_id)
+    if drift is None:
+        cli_error(
+            f"Person {person_id} not found in local ledger.\n"
+            "This person may not have been encountered during deep ingestion."
+        )
+
+    if fmt == OutputFormat.json:
+        format_output(drift.to_dict(), fmt="json")
+    elif fmt == OutputFormat.csv:
+        if not drift.changes:
+            typer.echo("No changes recorded for this person.")
+            return
+        rows = [c.to_dict() for c in drift.changes]
+        headers = [
+            "observed_at",
+            "entity_type",
+            "field_name",
+            "old_value",
+            "new_value",
+            "ingest_run_id",
+        ]
+        format_output(rows, fmt="csv", headers=headers)
+    else:
+        # Table output
+        typer.echo(f"Person: {drift.person_name}")
+        typer.echo(f"Canvas User ID: {drift.canvas_user_id}")
+        typer.echo("")
+
+        if not drift.changes:
+            typer.echo("No changes recorded for this person.")
+            return
+
+        typer.secho(f"Change History ({len(drift.changes)} changes):", bold=True)
+        typer.echo("")
+
+        for change in drift.changes:
+            observed = change.observed_at.strftime("%Y-%m-%d %H:%M")
+            typer.echo(
+                f"  [{observed}] {change.entity_type}/{change.entity_canvas_id}: "
+                f"{change.field_name}"
+            )
+            typer.echo(f"    '{change.old_value}' -> '{change.new_value}'")
+
+
+@drift_app.command("offering")
+def drift_offering(
+    offering_id: Annotated[
+        int,
+        typer.Argument(help="Canvas course ID of the offering."),
+    ],
+    fmt: Annotated[
+        OutputFormat,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format.",
+        ),
+    ] = OutputFormat.table,
+) -> None:
+    """Query drift history for an offering.
+
+    Shows all recorded changes for the offering, including its
+    sections and enrollments across ingestion runs. Useful for
+    tracking enrollment changes like adds, drops, and state transitions.
+
+    Examples:
+        cl query drift offering 12345
+        cl query drift offering 12345 --format json
+    """
+    settings = load_settings()
+
+    if not settings.db_path.exists():
+        cli_error(f"Database not found at {settings.db_path}. Run 'cl db migrate' to initialize.")
+
+    drift = get_offering_drift(settings.db_path, offering_id)
+    if drift is None:
+        cli_error(
+            f"Offering {offering_id} not found in local ledger.\n"
+            "Run 'cl ingest catalog' to fetch courses."
+        )
+
+    if fmt == OutputFormat.json:
+        format_output(drift.to_dict(), fmt="json")
+    elif fmt == OutputFormat.csv:
+        if not drift.changes:
+            typer.echo("No changes recorded for this offering.")
+            return
+        rows = [c.to_dict() for c in drift.changes]
+        headers = [
+            "observed_at",
+            "entity_type",
+            "entity_canvas_id",
+            "field_name",
+            "old_value",
+            "new_value",
+            "ingest_run_id",
+        ]
+        format_output(rows, fmt="csv", headers=headers)
+    else:
+        # Table output
+        typer.echo(f"Offering: {drift.offering_name}")
+        typer.echo(f"Code: {drift.offering_code or '(none)'}")
+        typer.echo(f"Canvas ID: {drift.canvas_course_id}")
+        typer.echo("")
+
+        if not drift.changes:
+            typer.echo("No changes recorded for this offering.")
+            return
+
+        typer.secho(f"Change History ({len(drift.changes)} changes):", bold=True)
+        typer.echo("")
+
+        for change in drift.changes:
+            observed = change.observed_at.strftime("%Y-%m-%d %H:%M")
+            typer.echo(
+                f"  [{observed}] {change.entity_type}/{change.entity_canvas_id}: "
+                f"{change.field_name}"
+            )
+            typer.echo(f"    '{change.old_value}' -> '{change.new_value}'")

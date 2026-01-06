@@ -92,7 +92,7 @@ class TestMigrationStatus:
         status = get_migration_status(temp_db_path)
 
         assert status["db_exists"] is True
-        assert status["current_revision"] == "004"  # Latest migration
+        assert status["current_revision"] == "005"  # Latest migration
         assert status["pending_count"] == 0
         assert status["up_to_date"] is True
 

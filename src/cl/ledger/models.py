@@ -3,6 +3,7 @@
 Phase 0: IngestRun for tracking ingestion runs.
 Phase 1: Term, Offering, UserEnrollment for catalog ingestion.
 Phase 3: Section, Person, Enrollment for deep ingestion.
+Phase 4: ChangeLog for history/drift tracking.
 """
 
 from __future__ import annotations
@@ -61,12 +62,14 @@ class IngestRun(SQLModel, table=True):
     new_count: int = Field(default=0)
     updated_count: int = Field(default=0)
     unchanged_count: int = Field(default=0)
+    drift_count: int = Field(default=0)  # Phase 4: count of changes detected
 
     def mark_completed(
         self,
         new_count: int = 0,
         updated_count: int = 0,
         unchanged_count: int = 0,
+        drift_count: int = 0,
     ) -> None:
         """Mark the ingestion run as completed with counts."""
         self.completed_at = _utcnow()
@@ -74,6 +77,7 @@ class IngestRun(SQLModel, table=True):
         self.new_count = new_count
         self.updated_count = updated_count
         self.unchanged_count = unchanged_count
+        self.drift_count = drift_count
 
     def mark_failed(self, error_message: str) -> None:
         """Mark the ingestion run as failed with error message."""
@@ -94,6 +98,7 @@ class IngestRun(SQLModel, table=True):
             "new_count": self.new_count,
             "updated_count": self.updated_count,
             "unchanged_count": self.unchanged_count,
+            "drift_count": self.drift_count,
         }
 
 
@@ -305,4 +310,69 @@ class Enrollment(SQLModel, table=True):
             "final_score": self.final_score,
             "observed_at": self.observed_at.isoformat() if self.observed_at else None,
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
+        }
+
+
+# =============================================================================
+# Phase 4: History/Drift Tracking Models
+# =============================================================================
+
+
+class EntityType(str, Enum):
+    """Entity types that can have changes tracked."""
+
+    TERM = "term"
+    OFFERING = "offering"
+    USER_ENROLLMENT = "user_enrollment"
+    SECTION = "section"
+    PERSON = "person"
+    ENROLLMENT = "enrollment"
+
+
+class ChangeLog(SQLModel, table=True):
+    """Records entity changes across ingestion runs for drift tracking.
+
+    Each record captures a single field change for an entity, including
+    the old and new values. This enables:
+    - Querying what changed for a specific entity over time
+    - Querying what changed in a specific ingestion run
+    - Reconstructing entity history
+
+    Design decision (T065): Change log table approach chosen for:
+    - Simplicity: Single table for all entity changes
+    - Query efficiency: Easy to query by entity or by run
+    - Storage efficient: Only stores changed values, not full snapshots
+    - Non-intrusive: Doesn't require modifying existing entity tables
+    """
+
+    __tablename__ = "change_log"
+
+    id: int | None = Field(default=None, primary_key=True)
+    # Entity reference
+    entity_type: EntityType = Field(index=True)
+    entity_canvas_id: int = Field(
+        index=True,
+        description="Canvas ID of the entity (course_id, user_id, enrollment_id, etc.)",
+    )
+    # Change details
+    field_name: str = Field(description="Name of the changed field")
+    old_value: str | None = Field(
+        default=None, description="Previous value (null for new entities)"
+    )
+    new_value: str | None = Field(default=None, description="New value (null for deletions)")
+    # Tracking
+    ingest_run_id: int = Field(foreign_key="ingest_run.id", index=True)
+    observed_at: datetime = Field(default_factory=_utcnow, index=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "entity_type": self.entity_type.value,
+            "entity_canvas_id": self.entity_canvas_id,
+            "field_name": self.field_name,
+            "old_value": self.old_value,
+            "new_value": self.new_value,
+            "ingest_run_id": self.ingest_run_id,
+            "observed_at": self.observed_at.isoformat() if self.observed_at else None,
         }
