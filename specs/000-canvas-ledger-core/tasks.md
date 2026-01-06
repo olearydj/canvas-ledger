@@ -271,31 +271,31 @@
 
 ### Deep Ingestion Models
 
-- [ ] T047 [P3] Design and implement SQLModel models in `src/cl/ledger/models.py`:
+- [X] T047 [P3] Design and implement SQLModel models in `src/cl/ledger/models.py`:
   - `Section`: canvas_section_id, offering_id FK, name, sis_section_id, observed_at, last_seen_at
   - `Person`: canvas_user_id, name, sortable_name, sis_user_id, login_id, observed_at, last_seen_at
   - `Enrollment`: canvas_enrollment_id, offering_id FK, section_id FK, person_id FK, role, enrollment_state, current_grade, current_score, final_grade, final_score, observed_at, last_seen_at
   - Review schema; consider how to handle enrollment identity (Canvas enrollment_id is canonical)
-- [ ] T048 [P3] Create Alembic migration (004) for Section, Person, Enrollment tables
+- [X] T048 [P3] Create Alembic migration (004) for Section, Person, Enrollment tables
   - Add appropriate indexes (person_canvas_user_id, enrollment by offering, etc.)
   - Review before committing
 
 ### Canvas API Client (Deep Ingestion Scope)
 
-- [ ] T049 [P3] Implement `list_sections(course_id)` in `src/cl/canvas/client.py`:
+- [X] T049 [P3] Implement `list_sections(course_id)` in `src/cl/canvas/client.py`:
   - Fetch all sections for a course
   - Return normalized structures
-- [ ] T050 [P3] Implement `list_enrollments(course_id)` in `src/cl/canvas/client.py`:
+- [X] T050 [P3] Implement `list_enrollments(course_id)` in `src/cl/canvas/client.py`:
   - Fetch all enrollments (all roles, all states)
   - Include grade fields (current_grade, current_score, final_grade, final_score)
   - Handle pagination
-- [ ] T051 [P3] Implement `get_user(user_id)` in `src/cl/canvas/client.py`:
+- [X] T051 [P3] Implement `get_user(user_id)` in `src/cl/canvas/client.py`:
   - Fetch user details
   - Handle missing user gracefully
 
 ### Deep Ingestion Logic
 
-- [ ] T052 [P3] Implement deep ingestion in `src/cl/ledger/ingest.py`:
+- [X] T052 [P3] Implement deep ingestion in `src/cl/ledger/ingest.py`:
   - `ingest_offering(canvas_course_id)`:
     - Create IngestRun with scope="offering:{id}"
     - Fetch and upsert sections
@@ -304,59 +304,59 @@
     - Update last_seen_at on existing records
     - Detect drift (state changes, grade changes) — log for now
     - Transactional: rollback on failure
-- [ ] T053 [P3] Test idempotency of deep ingestion:
+- [X] T053 [P3] Test idempotency of deep ingestion:
   - Same enrollment data → no duplicates
   - Changed state → updated, logged
 
 ### Roster and Person Queries
 
-- [ ] T054 [P3] Implement `get_offering_roster(canvas_course_id)` in `src/cl/ledger/queries.py`:
+- [X] T054 [P3] Implement `get_offering_roster(canvas_course_id)` in `src/cl/ledger/queries.py`:
   - Return enrollments grouped by section
   - Include: person name, role, enrollment_state
   - Sort by section, then by person name
-- [ ] T055 [P3] Implement `get_person_history(canvas_user_id)` in `src/cl/ledger/queries.py`:
+- [X] T055 [P3] Implement `get_person_history(canvas_user_id)` in `src/cl/ledger/queries.py`:
   - Return all enrollments for a person across ingested offerings
   - Include: offering name, term, section, role, state
   - Sort by term (descending)
-- [ ] T056 [P3] Update `get_offering_responsibility()` in `src/cl/ledger/queries.py`:
+- [X] T056 [P3] Update `get_offering_responsibility()` in `src/cl/ledger/queries.py`:
   - Now includes all instructors from Enrollment table (not just user's enrollment)
   - Still includes LeadInstructorAnnotation
 
 ### Deep Ingestion CLI Commands
 
-- [ ] T057 [P3] Implement `cl ingest offering <id>` in `src/cl/cli/ingest_cmd.py`:
+- [X] T057 [P3] Implement `cl ingest offering <id>` in `src/cl/cli/ingest_cmd.py`:
   - Accept Canvas course ID
   - Run deep ingestion
   - Output: section/enrollment/person counts
-- [ ] T058 [P3] Implement `cl query offering <id>` in `src/cl/cli/query_cmd.py`:
+- [X] T058 [P3] Implement `cl query offering <id>` in `src/cl/cli/query_cmd.py`:
   - Default: roster by section
   - `--instructors`: show instructors with declared lead
   - `--format json|csv`
-- [ ] T059 [P3] Implement `cl query person <id>` in `src/cl/cli/query_cmd.py`:
+- [X] T059 [P3] Implement `cl query person <id>` in `src/cl/cli/query_cmd.py`:
   - Show enrollment history across offerings
   - `--format json|csv`
   - Accept Canvas user ID (consider supporting sis_user_id lookup later)
 
 ### Export Extensions
 
-- [ ] T060 [P3] Implement `cl export enrollments <offering_id>` in `src/cl/cli/export_cmd.py`:
+- [X] T060 [P3] Implement `cl export enrollments <offering_id>` in `src/cl/cli/export_cmd.py`:
   - Export roster with person, section, role, state
   - `--format json|csv`
-- [ ] T061 [P3] Implement `cl export person <id>` in `src/cl/cli/export_cmd.py`:
+- [X] T061 [P3] Implement `cl export person <id>` in `src/cl/cli/export_cmd.py`:
   - Export person's enrollment history
   - `--format json|csv`
 
 ### Phase 3 Verification
 
-- [ ] T062 [P3] Write unit tests for deep ingestion in `tests/unit/test_ingest_deep.py`:
+- [X] T062 [P3] Write unit tests for deep ingestion in `tests/unit/test_deep_ingest.py`:
   - Mock Canvas API responses
   - Test section/enrollment/person upsert
   - Test idempotency
-- [ ] T063 [P3] Write integration test for roster query in `tests/integration/test_roster_query.py`:
+- [X] T063 [P3] Write integration test for roster query in `tests/unit/test_deep_ingest.py`:
   - Seed test data
   - Verify grouping by section
   - Verify output formats
-- [ ] T064 [P3] Smoke check: `uv run cl ingest offering <real_id> && uv run cl query offering <id> --format json` succeeds
+- [X] T064 [P3] Smoke check: `uv run cl ingest offering <real_id> && uv run cl query offering <id> --format json` succeeds
   - Skip gracefully if `CANVAS_API_TOKEN` not configured; never log tokens
 
 **Checkpoint**: Phase 3 complete. Deep ingestion and roster/person queries work.

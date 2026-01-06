@@ -2,6 +2,7 @@
 
 Phase 0: IngestRun for tracking ingestion runs.
 Phase 1: Term, Offering, UserEnrollment for catalog ingestion.
+Phase 3: Section, Person, Enrollment for deep ingestion.
 """
 
 from __future__ import annotations
@@ -190,6 +191,118 @@ class UserEnrollment(SQLModel, table=True):
             "offering_id": self.offering_id,
             "role": self.role,
             "enrollment_state": self.enrollment_state,
+            "observed_at": self.observed_at.isoformat() if self.observed_at else None,
+            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
+        }
+
+
+# =============================================================================
+# Phase 3: Deep Ingestion Models
+# =============================================================================
+
+
+class Section(SQLModel, table=True):
+    """Canvas section within an offering.
+
+    Sections represent subdivisions of a course, typically for
+    organizational or scheduling purposes.
+    """
+
+    __tablename__ = "section"
+
+    id: int | None = Field(default=None, primary_key=True)
+    canvas_section_id: int = Field(unique=True, index=True)
+    offering_id: int = Field(foreign_key="offering.id", index=True)
+    name: str
+    sis_section_id: str | None = Field(default=None, index=True)
+    observed_at: datetime = Field(default_factory=_utcnow)
+    last_seen_at: datetime = Field(default_factory=_utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "canvas_section_id": self.canvas_section_id,
+            "offering_id": self.offering_id,
+            "name": self.name,
+            "sis_section_id": self.sis_section_id,
+            "observed_at": self.observed_at.isoformat() if self.observed_at else None,
+            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
+        }
+
+
+class Person(SQLModel, table=True):
+    """A person (user) observed through Canvas enrollments.
+
+    Represents any user encountered during deep ingestion - students,
+    instructors, TAs, etc. Identified primarily by Canvas user ID.
+    """
+
+    __tablename__ = "person"
+
+    id: int | None = Field(default=None, primary_key=True)
+    canvas_user_id: int = Field(unique=True, index=True)
+    name: str
+    sortable_name: str | None = Field(default=None)
+    sis_user_id: str | None = Field(default=None, index=True)
+    login_id: str | None = Field(default=None)
+    observed_at: datetime = Field(default_factory=_utcnow)
+    last_seen_at: datetime = Field(default_factory=_utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "canvas_user_id": self.canvas_user_id,
+            "name": self.name,
+            "sortable_name": self.sortable_name,
+            "sis_user_id": self.sis_user_id,
+            "login_id": self.login_id,
+            "observed_at": self.observed_at.isoformat() if self.observed_at else None,
+            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
+        }
+
+
+class Enrollment(SQLModel, table=True):
+    """A person's enrollment in an offering.
+
+    Represents any enrollment (student, instructor, TA, etc.) with full
+    enrollment details including section assignment and grade information.
+    This is distinct from UserEnrollment which tracks only the current
+    user's enrollments from catalog ingestion.
+    """
+
+    __tablename__ = "enrollment"
+
+    id: int | None = Field(default=None, primary_key=True)
+    canvas_enrollment_id: int = Field(unique=True, index=True)
+    offering_id: int = Field(foreign_key="offering.id", index=True)
+    section_id: int | None = Field(default=None, foreign_key="section.id", index=True)
+    person_id: int = Field(foreign_key="person.id", index=True)
+    role: str  # e.g., "StudentEnrollment", "TeacherEnrollment", etc.
+    enrollment_state: str = Field(default="active")  # active, invited, completed, etc.
+    # Grade fields (Canvas-reported, may be null)
+    current_grade: str | None = Field(default=None)
+    current_score: float | None = Field(default=None)
+    final_grade: str | None = Field(default=None)
+    final_score: float | None = Field(default=None)
+    observed_at: datetime = Field(default_factory=_utcnow)
+    last_seen_at: datetime = Field(default_factory=_utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "canvas_enrollment_id": self.canvas_enrollment_id,
+            "offering_id": self.offering_id,
+            "section_id": self.section_id,
+            "person_id": self.person_id,
+            "role": self.role,
+            "enrollment_state": self.enrollment_state,
+            "current_grade": self.current_grade,
+            "current_score": self.current_score,
+            "final_grade": self.final_grade,
+            "final_score": self.final_score,
             "observed_at": self.observed_at.isoformat() if self.observed_at else None,
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
         }

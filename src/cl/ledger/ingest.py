@@ -21,13 +21,19 @@ from sqlmodel import Session, select
 from cl.canvas.client import (
     CanvasClient,
     CanvasClientError,
+    CanvasNotFoundError,
     CourseData,
+    CourseEnrollmentData,
+    SectionData,
     TermData,
 )
 from cl.ledger.models import (
+    Enrollment,
     IngestRun,
     IngestScope,
     Offering,
+    Person,
+    Section,
     Term,
     UserEnrollment,
 )
@@ -405,3 +411,383 @@ def get_ingest_runs(
         if scope:
             stmt = stmt.where(IngestRun.scope == scope)
         return list(session.exec(stmt).all())
+
+
+# =============================================================================
+# Phase 3: Deep Ingestion (Sections, Enrollments, People)
+# =============================================================================
+
+
+def _upsert_section(
+    session: Session,
+    section_data: SectionData,
+    offering_id: int,
+) -> tuple[Section, str, list[str]]:
+    """Upsert a section record.
+
+    Returns:
+        Tuple of (Section, status, drift_list) where status is 'new', 'updated', or 'unchanged'.
+    """
+    stmt = select(Section).where(Section.canvas_section_id == section_data.canvas_section_id)
+    existing = session.exec(stmt).first()
+
+    now = _utcnow()
+    drift_list: list[str] = []
+
+    if existing is None:
+        section = Section(
+            canvas_section_id=section_data.canvas_section_id,
+            offering_id=offering_id,
+            name=section_data.name,
+            sis_section_id=section_data.sis_section_id,
+            observed_at=now,
+            last_seen_at=now,
+        )
+        session.add(section)
+        return section, "new", drift_list
+
+    # Check for drift
+    drift = False
+
+    if existing.name != section_data.name:
+        drift_list.append(
+            f"Section {section_data.canvas_section_id}: name "
+            f"'{existing.name}' -> '{section_data.name}'"
+        )
+        existing.name = section_data.name
+        drift = True
+
+    if existing.sis_section_id != section_data.sis_section_id:
+        drift_list.append(
+            f"Section {section_data.canvas_section_id}: sis_section_id "
+            f"'{existing.sis_section_id}' -> '{section_data.sis_section_id}'"
+        )
+        existing.sis_section_id = section_data.sis_section_id
+        drift = True
+
+    existing.last_seen_at = now
+
+    if drift:
+        existing.observed_at = now
+        return existing, "updated", drift_list
+
+    return existing, "unchanged", drift_list
+
+
+def _upsert_person(
+    session: Session,
+    canvas_user_id: int,
+    name: str,
+    sortable_name: str | None,
+    sis_user_id: str | None,
+    login_id: str | None,
+) -> tuple[Person, str, list[str]]:
+    """Upsert a person record.
+
+    Returns:
+        Tuple of (Person, status, drift_list) where status is 'new', 'updated', or 'unchanged'.
+    """
+    stmt = select(Person).where(Person.canvas_user_id == canvas_user_id)
+    existing = session.exec(stmt).first()
+
+    now = _utcnow()
+    drift_list: list[str] = []
+
+    if existing is None:
+        person = Person(
+            canvas_user_id=canvas_user_id,
+            name=name,
+            sortable_name=sortable_name,
+            sis_user_id=sis_user_id,
+            login_id=login_id,
+            observed_at=now,
+            last_seen_at=now,
+        )
+        session.add(person)
+        return person, "new", drift_list
+
+    # Check for drift
+    drift = False
+
+    if existing.name != name:
+        drift_list.append(f"Person {canvas_user_id}: name '{existing.name}' -> '{name}'")
+        existing.name = name
+        drift = True
+
+    if existing.sortable_name != sortable_name:
+        existing.sortable_name = sortable_name
+        drift = True
+
+    if existing.sis_user_id != sis_user_id:
+        existing.sis_user_id = sis_user_id
+        drift = True
+
+    if existing.login_id != login_id:
+        existing.login_id = login_id
+        drift = True
+
+    existing.last_seen_at = now
+
+    if drift:
+        existing.observed_at = now
+        return existing, "updated", drift_list
+
+    return existing, "unchanged", drift_list
+
+
+def _upsert_enrollment(
+    session: Session,
+    enrollment_data: CourseEnrollmentData,
+    offering_id: int,
+    section_id: int | None,
+    person_id: int,
+) -> tuple[Enrollment, str, list[str]]:
+    """Upsert an enrollment record.
+
+    Returns:
+        Tuple of (Enrollment, status, drift_list) where status is 'new', 'updated', or 'unchanged'.
+    """
+    stmt = select(Enrollment).where(
+        Enrollment.canvas_enrollment_id == enrollment_data.canvas_enrollment_id
+    )
+    existing = session.exec(stmt).first()
+
+    now = _utcnow()
+    drift_list: list[str] = []
+
+    if existing is None:
+        enrollment = Enrollment(
+            canvas_enrollment_id=enrollment_data.canvas_enrollment_id,
+            offering_id=offering_id,
+            section_id=section_id,
+            person_id=person_id,
+            role=enrollment_data.role,
+            enrollment_state=enrollment_data.enrollment_state,
+            current_grade=enrollment_data.current_grade,
+            current_score=enrollment_data.current_score,
+            final_grade=enrollment_data.final_grade,
+            final_score=enrollment_data.final_score,
+            observed_at=now,
+            last_seen_at=now,
+        )
+        session.add(enrollment)
+        return enrollment, "new", drift_list
+
+    # Check for drift
+    drift = False
+    enrollment_id = enrollment_data.canvas_enrollment_id
+
+    if existing.role != enrollment_data.role:
+        drift_list.append(
+            f"Enrollment {enrollment_id}: role '{existing.role}' -> '{enrollment_data.role}'"
+        )
+        existing.role = enrollment_data.role
+        drift = True
+
+    if existing.enrollment_state != enrollment_data.enrollment_state:
+        drift_list.append(
+            f"Enrollment {enrollment_id}: state "
+            f"'{existing.enrollment_state}' -> '{enrollment_data.enrollment_state}'"
+        )
+        existing.enrollment_state = enrollment_data.enrollment_state
+        drift = True
+
+    # Grade changes (track for drift)
+    if existing.current_grade != enrollment_data.current_grade:
+        existing.current_grade = enrollment_data.current_grade
+        drift = True
+
+    if existing.current_score != enrollment_data.current_score:
+        existing.current_score = enrollment_data.current_score
+        drift = True
+
+    if existing.final_grade != enrollment_data.final_grade:
+        existing.final_grade = enrollment_data.final_grade
+        drift = True
+
+    if existing.final_score != enrollment_data.final_score:
+        existing.final_score = enrollment_data.final_score
+        drift = True
+
+    # Section change (unusual but possible)
+    if existing.section_id != section_id:
+        existing.section_id = section_id
+        drift = True
+
+    existing.last_seen_at = now
+
+    if drift:
+        existing.observed_at = now
+        return existing, "updated", drift_list
+
+    return existing, "unchanged", drift_list
+
+
+def ingest_offering(
+    client: CanvasClient,
+    db_path: Path | str,
+    canvas_course_id: int,
+) -> IngestResult:
+    """Deep ingest a specific offering (sections, enrollments, people).
+
+    Creates or updates:
+    - Section records for each section in the course
+    - Person records for each user with an enrollment
+    - Enrollment records for each enrollment (with grade data)
+
+    Args:
+        client: Configured CanvasClient instance.
+        db_path: Path to the SQLite database.
+        canvas_course_id: Canvas course ID to ingest.
+
+    Returns:
+        IngestResult with counts and any drift detected.
+    """
+    with get_session(db_path) as session:
+        # First, verify the offering exists locally
+        stmt = select(Offering).where(Offering.canvas_course_id == canvas_course_id)
+        offering = session.exec(stmt).first()
+
+        if offering is None:
+            # Need to run catalog ingest first or the offering doesn't exist
+            return IngestResult(
+                run_id=0,
+                new_count=0,
+                updated_count=0,
+                unchanged_count=0,
+                drift_detected=[],
+                error=f"Offering {canvas_course_id} not found locally. "
+                "Run 'cl ingest catalog' first to populate offerings.",
+            )
+
+        assert offering.id is not None
+        offering_id: int = offering.id
+
+        # Create ingest run record
+        run = IngestRun(
+            scope=IngestScope.OFFERING,
+            scope_detail=str(canvas_course_id),
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        assert run.id is not None
+        run_id: int = run.id
+
+        try:
+            new_count = 0
+            updated_count = 0
+            unchanged_count = 0
+            all_drift: list[str] = []
+
+            # Step 1: Fetch and upsert sections
+            logger.info(f"Fetching sections for course {canvas_course_id}")
+            sections = client.list_sections(canvas_course_id)
+
+            section_map: dict[int, int] = {}  # canvas_section_id -> internal section_id
+
+            for section_data in sections:
+                section, status, drift = _upsert_section(session, section_data, offering_id)
+                session.flush()
+                assert section.id is not None
+                section_map[section_data.canvas_section_id] = section.id
+                all_drift.extend(drift)
+
+                if status == "new":
+                    new_count += 1
+                elif status == "updated":
+                    updated_count += 1
+                else:
+                    unchanged_count += 1
+
+            logger.info(f"Processed {len(sections)} sections")
+
+            # Step 2: Fetch enrollments (includes user info)
+            logger.info(f"Fetching enrollments for course {canvas_course_id}")
+            enrollments = client.list_enrollments(canvas_course_id)
+
+            logger.info(f"Processing {len(enrollments)} enrollments")
+
+            for enrollment_data in enrollments:
+                # Step 2a: Upsert the person
+                person, person_status, person_drift = _upsert_person(
+                    session,
+                    canvas_user_id=enrollment_data.user_id,
+                    name=enrollment_data.user_name,
+                    sortable_name=enrollment_data.user_sortable_name,
+                    sis_user_id=enrollment_data.user_sis_id,
+                    login_id=enrollment_data.user_login_id,
+                )
+                session.flush()
+                assert person.id is not None
+                all_drift.extend(person_drift)
+
+                if person_status == "new":
+                    new_count += 1
+                elif person_status == "updated":
+                    updated_count += 1
+
+                # Step 2b: Map section_id
+                section_id: int | None = None
+                if enrollment_data.course_section_id:
+                    section_id = section_map.get(enrollment_data.course_section_id)
+
+                # Step 2c: Upsert the enrollment
+                enrollment, enroll_status, enroll_drift = _upsert_enrollment(
+                    session,
+                    enrollment_data,
+                    offering_id=offering_id,
+                    section_id=section_id,
+                    person_id=person.id,
+                )
+                all_drift.extend(enroll_drift)
+
+                if enroll_status == "new":
+                    new_count += 1
+                elif enroll_status == "updated":
+                    updated_count += 1
+                else:
+                    unchanged_count += 1
+
+            # Update ingest run with results
+            run.mark_completed(
+                new_count=new_count,
+                updated_count=updated_count,
+                unchanged_count=unchanged_count,
+            )
+            session.commit()
+
+            return IngestResult(
+                run_id=run_id,
+                new_count=new_count,
+                updated_count=updated_count,
+                unchanged_count=unchanged_count,
+                drift_detected=all_drift,
+            )
+
+        except CanvasNotFoundError as e:
+            run.mark_failed(str(e))
+            session.commit()
+            return IngestResult(
+                run_id=run_id,
+                new_count=0,
+                updated_count=0,
+                unchanged_count=0,
+                drift_detected=[],
+                error=str(e),
+            )
+        except CanvasClientError as e:
+            run.mark_failed(str(e))
+            session.commit()
+            return IngestResult(
+                run_id=run_id,
+                new_count=0,
+                updated_count=0,
+                unchanged_count=0,
+                drift_detected=[],
+                error=str(e),
+            )
+        except Exception as e:
+            run.mark_failed(f"Unexpected error: {e}")
+            session.commit()
+            raise

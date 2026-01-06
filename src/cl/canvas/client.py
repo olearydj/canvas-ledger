@@ -72,6 +72,52 @@ class TermData:
     end_date: datetime | None
 
 
+@dataclass
+class SectionData:
+    """Normalized section data from Canvas API."""
+
+    canvas_section_id: int
+    course_id: int
+    name: str
+    sis_section_id: str | None
+
+
+@dataclass
+class CourseEnrollmentData:
+    """Normalized enrollment data for deep ingestion.
+
+    Contains full enrollment details including user info and grades.
+    """
+
+    canvas_enrollment_id: int
+    course_id: int
+    course_section_id: int | None
+    user_id: int
+    role: str
+    enrollment_state: str
+    # User info (included to avoid separate API calls)
+    user_name: str
+    user_sortable_name: str | None
+    user_sis_id: str | None
+    user_login_id: str | None
+    # Grade data (may be null)
+    current_grade: str | None
+    current_score: float | None
+    final_grade: str | None
+    final_score: float | None
+
+
+@dataclass
+class UserData:
+    """Normalized user data from Canvas API."""
+
+    canvas_user_id: int
+    name: str
+    sortable_name: str | None
+    sis_user_id: str | None
+    login_id: str | None
+
+
 class CanvasClient:
     """Client for interacting with Canvas API.
 
@@ -271,6 +317,166 @@ class CanvasClient:
 
         except ResourceDoesNotExist:
             raise CanvasNotFoundError(f"Course {course_id} not found.") from None
+        except InvalidAccessToken as e:
+            raise CanvasAuthenticationError(
+                "Canvas API token is invalid or expired. Please update your token configuration."
+            ) from e
+        except CanvasException as e:
+            raise CanvasClientError(f"Canvas API error: {e}") from e
+
+    def list_sections(self, course_id: int) -> list[SectionData]:
+        """List all sections for a course.
+
+        Args:
+            course_id: Canvas course ID.
+
+        Returns:
+            List of SectionData objects.
+
+        Raises:
+            CanvasNotFoundError: If the course is not found.
+            CanvasAuthenticationError: If the API token is invalid.
+            CanvasClientError: For other API errors.
+        """
+        try:
+            course = self._canvas.get_course(course_id)
+            sections = course.get_sections()
+
+            result: list[SectionData] = []
+            for section in sections:
+                result.append(
+                    SectionData(
+                        canvas_section_id=int(section.id),
+                        course_id=int(course_id),
+                        name=str(section.name),
+                        sis_section_id=getattr(section, "sis_section_id", None),
+                    )
+                )
+
+            return result
+
+        except ResourceDoesNotExist:
+            raise CanvasNotFoundError(f"Course {course_id} not found.") from None
+        except InvalidAccessToken as e:
+            raise CanvasAuthenticationError(
+                "Canvas API token is invalid or expired. Please update your token configuration."
+            ) from e
+        except CanvasException as e:
+            raise CanvasClientError(f"Canvas API error: {e}") from e
+
+    def list_enrollments(self, course_id: int) -> list[CourseEnrollmentData]:
+        """List all enrollments for a course.
+
+        Fetches all enrollments (all roles, all states) for a course,
+        including user information and grade data.
+
+        Args:
+            course_id: Canvas course ID.
+
+        Returns:
+            List of CourseEnrollmentData objects.
+
+        Raises:
+            CanvasNotFoundError: If the course is not found.
+            CanvasAuthenticationError: If the API token is invalid.
+            CanvasClientError: For other API errors.
+        """
+        try:
+            course = self._canvas.get_course(course_id)
+
+            # Request all enrollment states and include user info
+            all_states = [
+                "active",
+                "invited",
+                "creation_pending",
+                "rejected",
+                "completed",
+                "inactive",
+                "deleted",
+            ]
+            enrollments = course.get_enrollments(
+                state=all_states,
+                include=["user"],
+            )
+
+            result: list[CourseEnrollmentData] = []
+            for enrollment in enrollments:
+                # Extract user info from the enrollment object
+                user = getattr(enrollment, "user", {}) or {}
+                if isinstance(user, dict):
+                    user_name = user.get("name", "Unknown")
+                    user_sortable_name = user.get("sortable_name")
+                    user_sis_id = user.get("sis_user_id")
+                    user_login_id = user.get("login_id")
+                else:
+                    user_name = getattr(user, "name", "Unknown")
+                    user_sortable_name = getattr(user, "sortable_name", None)
+                    user_sis_id = getattr(user, "sis_user_id", None)
+                    user_login_id = getattr(user, "login_id", None)
+
+                # Extract grade data (may be in nested 'grades' dict)
+                grades = getattr(enrollment, "grades", {}) or {}
+                current_grade = grades.get("current_grade") if isinstance(grades, dict) else None
+                current_score = grades.get("current_score") if isinstance(grades, dict) else None
+                final_grade = grades.get("final_grade") if isinstance(grades, dict) else None
+                final_score = grades.get("final_score") if isinstance(grades, dict) else None
+
+                result.append(
+                    CourseEnrollmentData(
+                        canvas_enrollment_id=int(enrollment.id),
+                        course_id=int(course_id),
+                        course_section_id=getattr(enrollment, "course_section_id", None),
+                        user_id=int(enrollment.user_id),
+                        role=str(getattr(enrollment, "role", "unknown")),
+                        enrollment_state=str(getattr(enrollment, "enrollment_state", "unknown")),
+                        user_name=str(user_name),
+                        user_sortable_name=user_sortable_name,
+                        user_sis_id=user_sis_id,
+                        user_login_id=user_login_id,
+                        current_grade=current_grade,
+                        current_score=float(current_score) if current_score else None,
+                        final_grade=final_grade,
+                        final_score=float(final_score) if final_score else None,
+                    )
+                )
+
+            return result
+
+        except ResourceDoesNotExist:
+            raise CanvasNotFoundError(f"Course {course_id} not found.") from None
+        except InvalidAccessToken as e:
+            raise CanvasAuthenticationError(
+                "Canvas API token is invalid or expired. Please update your token configuration."
+            ) from e
+        except CanvasException as e:
+            raise CanvasClientError(f"Canvas API error: {e}") from e
+
+    def get_user(self, user_id: int) -> UserData | None:
+        """Get user details by ID.
+
+        Args:
+            user_id: Canvas user ID.
+
+        Returns:
+            UserData object or None if user not found.
+
+        Raises:
+            CanvasAuthenticationError: If the API token is invalid.
+            CanvasClientError: For other API errors.
+        """
+        try:
+            user = self._canvas.get_user(user_id)
+
+            return UserData(
+                canvas_user_id=int(user.id),
+                name=str(user.name),
+                sortable_name=getattr(user, "sortable_name", None),
+                sis_user_id=getattr(user, "sis_user_id", None),
+                login_id=getattr(user, "login_id", None),
+            )
+
+        except ResourceDoesNotExist:
+            return None
         except InvalidAccessToken as e:
             raise CanvasAuthenticationError(
                 "Canvas API token is invalid or expired. Please update your token configuration."

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from sqlmodel import Session, select
 
 from cl.annotations.models import InvolvementAnnotation, LeadInstructorAnnotation
-from cl.ledger.models import Offering, Term, UserEnrollment
+from cl.ledger.models import Enrollment, Offering, Person, Section, Term, UserEnrollment
 from cl.ledger.store import get_session
 
 if TYPE_CHECKING:
@@ -196,11 +196,12 @@ def get_offering_responsibility(
 ) -> OfferingResponsibility | None:
     """Get responsibility information for an offering.
 
-    Returns both observed instructors (from Canvas UserEnrollment with role=teacher)
-    and declared lead instructor (from LeadInstructorAnnotation).
+    Returns both observed instructors (from Canvas enrollments) and
+    declared lead instructor (from LeadInstructorAnnotation).
 
-    Note: In Phase 2, this uses only UserEnrollment (the user's own enrollments).
-    Full instructor list from all enrollments will be available in Phase 3.
+    If deep ingestion has been run for this offering, instructors are pulled
+    from the Enrollment table (all course instructors). Otherwise, falls back
+    to UserEnrollment (the current user's own enrollments).
 
     Args:
         db_path: Path to the SQLite database.
@@ -217,31 +218,54 @@ def get_offering_responsibility(
         if offering is None:
             return None
 
-        # Get observed instructors from UserEnrollment (user's own enrollments with instructor roles)
-        # Canvas API returns enrollment types like "TeacherEnrollment", "TaEnrollment", etc.
+        # Define instructor roles
         instructor_roles = {
             "TeacherEnrollment",
             "TaEnrollment",
             "DesignerEnrollment",
             "teacher",
             "ta",
-            "designer",  # Also support lowercase variants
+            "designer",
         }
-        enrollment_stmt = (
-            select(UserEnrollment)
-            .where(UserEnrollment.offering_id == offering.id)
-            .where(UserEnrollment.role.in_(instructor_roles))  # type: ignore[attr-defined]
-        )
-        enrollments = session.exec(enrollment_stmt).all()
 
-        observed_instructors = [
-            {
-                "role": e.role,
-                "enrollment_state": e.enrollment_state,
-                "source": "user_enrollment",  # Indicates this is the current user
-            }
-            for e in enrollments
-        ]
+        # First try to get instructors from deep ingestion (Enrollment table)
+        deep_enrollment_stmt = (
+            select(Enrollment, Person)
+            .join(Person, Enrollment.person_id == Person.id)  # type: ignore[arg-type]
+            .where(Enrollment.offering_id == offering.id)
+            .where(Enrollment.role.in_(instructor_roles))  # type: ignore[attr-defined]
+        )
+        deep_results = session.exec(deep_enrollment_stmt).all()
+
+        if deep_results:
+            # Use deep ingestion data (has person names)
+            observed_instructors = [
+                {
+                    "canvas_user_id": person.canvas_user_id,
+                    "person_name": person.name,
+                    "role": enrollment.role,
+                    "enrollment_state": enrollment.enrollment_state,
+                    "source": "enrollment",
+                }
+                for enrollment, person in deep_results
+            ]
+        else:
+            # Fall back to UserEnrollment (user's own enrollments)
+            user_enrollment_stmt = (
+                select(UserEnrollment)
+                .where(UserEnrollment.offering_id == offering.id)
+                .where(UserEnrollment.role.in_(instructor_roles))  # type: ignore[attr-defined]
+            )
+            user_enrollments = session.exec(user_enrollment_stmt).all()
+
+            observed_instructors = [
+                {
+                    "role": e.role,
+                    "enrollment_state": e.enrollment_state,
+                    "source": "user_enrollment",
+                }
+                for e in user_enrollments
+            ]
 
         # Get declared lead instructor
         lead_stmt = select(LeadInstructorAnnotation).where(
@@ -251,8 +275,18 @@ def get_offering_responsibility(
 
         declared_lead = None
         if lead_annotation:
+            # Try to get person name if they exist in the ledger
+            person_name = None
+            person_stmt = select(Person).where(
+                Person.canvas_user_id == lead_annotation.person_canvas_id
+            )
+            person = session.exec(person_stmt).first()
+            if person:
+                person_name = person.name
+
             declared_lead = {
                 "person_canvas_id": lead_annotation.person_canvas_id,
+                "person_name": person_name,
                 "designation": lead_annotation.designation.value,
                 "created_at": lead_annotation.created_at.isoformat()
                 if lead_annotation.created_at
@@ -346,4 +380,321 @@ def get_offerings_with_terms(db_path: Path | str) -> list[dict[str, Any]]:
                 ),
             }
             for offering, term in results
+        ]
+
+
+# =============================================================================
+# Phase 3: Deep Ingestion Queries
+# =============================================================================
+
+
+@dataclass
+class RosterEntry:
+    """A single entry in an offering's roster.
+
+    Contains person and enrollment information for display.
+    """
+
+    canvas_user_id: int
+    person_name: str
+    sortable_name: str | None
+    section_name: str | None
+    section_canvas_id: int | None
+    role: str
+    enrollment_state: str
+    current_grade: str | None = None
+    current_score: float | None = None
+    final_grade: str | None = None
+    final_score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "canvas_user_id": self.canvas_user_id,
+            "person_name": self.person_name,
+            "sortable_name": self.sortable_name,
+            "section_name": self.section_name,
+            "section_canvas_id": self.section_canvas_id,
+            "role": self.role,
+            "enrollment_state": self.enrollment_state,
+            "current_grade": self.current_grade,
+            "current_score": self.current_score,
+            "final_grade": self.final_grade,
+            "final_score": self.final_score,
+        }
+
+
+@dataclass
+class PersonHistoryEntry:
+    """A single entry in a person's enrollment history.
+
+    Contains offering, section, and enrollment information.
+    """
+
+    canvas_course_id: int
+    offering_name: str
+    offering_code: str | None
+    term_name: str | None
+    term_start_date: datetime | None
+    section_name: str | None
+    section_canvas_id: int | None
+    role: str
+    enrollment_state: str
+    current_grade: str | None = None
+    current_score: float | None = None
+    final_grade: str | None = None
+    final_score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "canvas_course_id": self.canvas_course_id,
+            "offering_name": self.offering_name,
+            "offering_code": self.offering_code,
+            "term_name": self.term_name,
+            "term_start_date": (self.term_start_date.isoformat() if self.term_start_date else None),
+            "section_name": self.section_name,
+            "section_canvas_id": self.section_canvas_id,
+            "role": self.role,
+            "enrollment_state": self.enrollment_state,
+            "current_grade": self.current_grade,
+            "current_score": self.current_score,
+            "final_grade": self.final_grade,
+            "final_score": self.final_score,
+        }
+
+
+@dataclass
+class OfferingRoster:
+    """Complete roster for an offering.
+
+    Contains offering metadata and enrollments grouped by section.
+    """
+
+    canvas_course_id: int
+    offering_name: str
+    offering_code: str | None
+    sections: dict[str, list[RosterEntry]]  # section_name -> enrollments
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "canvas_course_id": self.canvas_course_id,
+            "offering_name": self.offering_name,
+            "offering_code": self.offering_code,
+            "sections": {
+                section_name: [e.to_dict() for e in entries]
+                for section_name, entries in self.sections.items()
+            },
+        }
+
+
+def get_offering_roster(
+    db_path: Path | str,
+    canvas_course_id: int,
+) -> OfferingRoster | None:
+    """Get the roster for an offering, grouped by section.
+
+    Returns all enrollments for the offering with person and section information.
+
+    Args:
+        db_path: Path to the SQLite database.
+        canvas_course_id: Canvas course ID.
+
+    Returns:
+        OfferingRoster object or None if offering not found.
+    """
+    with get_session(db_path) as session:
+        # Get the offering
+        stmt = select(Offering).where(Offering.canvas_course_id == canvas_course_id)
+        offering = session.exec(stmt).first()
+
+        if offering is None:
+            return None
+
+        # Get all enrollments for this offering with person and section info
+        enrollment_stmt = (
+            select(Enrollment, Person, Section)
+            .join(Person, Enrollment.person_id == Person.id)  # type: ignore[arg-type]
+            .outerjoin(Section, Enrollment.section_id == Section.id)  # type: ignore[arg-type]
+            .where(Enrollment.offering_id == offering.id)
+            .order_by(Section.name, Person.sortable_name)  # type: ignore[arg-type]
+        )
+
+        results = session.exec(enrollment_stmt).all()
+
+        # Group by section
+        sections: dict[str, list[RosterEntry]] = {}
+
+        for enrollment, person, section in results:
+            section_name = section.name if section else "(No Section)"
+
+            if section_name not in sections:
+                sections[section_name] = []
+
+            sections[section_name].append(
+                RosterEntry(
+                    canvas_user_id=person.canvas_user_id,
+                    person_name=person.name,
+                    sortable_name=person.sortable_name,
+                    section_name=section.name if section else None,
+                    section_canvas_id=section.canvas_section_id if section else None,
+                    role=enrollment.role,
+                    enrollment_state=enrollment.enrollment_state,
+                    current_grade=enrollment.current_grade,
+                    current_score=enrollment.current_score,
+                    final_grade=enrollment.final_grade,
+                    final_score=enrollment.final_score,
+                )
+            )
+
+        return OfferingRoster(
+            canvas_course_id=canvas_course_id,
+            offering_name=offering.name,
+            offering_code=offering.code,
+            sections=sections,
+        )
+
+
+def get_person_history(
+    db_path: Path | str,
+    canvas_user_id: int,
+) -> list[PersonHistoryEntry]:
+    """Get the enrollment history for a person across all ingested offerings.
+
+    Returns all enrollments for the person with offering, term, and section info.
+
+    Args:
+        db_path: Path to the SQLite database.
+        canvas_user_id: Canvas user ID.
+
+    Returns:
+        List of PersonHistoryEntry objects, sorted by term (most recent first).
+    """
+    with get_session(db_path) as session:
+        # Get the person
+        stmt = select(Person).where(Person.canvas_user_id == canvas_user_id)
+        person = session.exec(stmt).first()
+
+        if person is None:
+            return []
+
+        # Get all enrollments for this person with offering, term, and section info
+        enrollment_stmt = (
+            select(Enrollment, Offering, Term, Section)
+            .join(Offering, Enrollment.offering_id == Offering.id)  # type: ignore[arg-type]
+            .outerjoin(Term, Offering.term_id == Term.id)  # type: ignore[arg-type]
+            .outerjoin(Section, Enrollment.section_id == Section.id)  # type: ignore[arg-type]
+            .where(Enrollment.person_id == person.id)
+        )
+
+        results = session.exec(enrollment_stmt).all()
+
+        entries: list[PersonHistoryEntry] = []
+
+        for enrollment, offering, term, section in results:
+            entries.append(
+                PersonHistoryEntry(
+                    canvas_course_id=offering.canvas_course_id,
+                    offering_name=offering.name,
+                    offering_code=offering.code,
+                    term_name=term.name if term else None,
+                    term_start_date=term.start_date if term else None,
+                    section_name=section.name if section else None,
+                    section_canvas_id=section.canvas_section_id if section else None,
+                    role=enrollment.role,
+                    enrollment_state=enrollment.enrollment_state,
+                    current_grade=enrollment.current_grade,
+                    current_score=enrollment.current_score,
+                    final_grade=enrollment.final_grade,
+                    final_score=enrollment.final_score,
+                )
+            )
+
+        # Sort by term start date (descending, nulls last), then by offering name
+        def sort_key(entry: PersonHistoryEntry) -> tuple[float, str]:
+            date = entry.term_start_date or datetime.min.replace(tzinfo=None)
+            if hasattr(date, "tzinfo") and date.tzinfo:
+                date = date.replace(tzinfo=None)
+            return (
+                -date.timestamp() if date != datetime.min else float("inf"),
+                entry.offering_name,
+            )
+
+        entries.sort(key=sort_key)
+
+        return entries
+
+
+def get_person_by_canvas_id(
+    db_path: Path | str,
+    canvas_user_id: int,
+) -> Person | None:
+    """Get a person by their Canvas user ID.
+
+    Args:
+        db_path: Path to the SQLite database.
+        canvas_user_id: Canvas user ID.
+
+    Returns:
+        Person object or None if not found.
+    """
+    with get_session(db_path) as session:
+        stmt = select(Person).where(Person.canvas_user_id == canvas_user_id)
+        return session.exec(stmt).first()
+
+
+def get_offering_instructors(
+    db_path: Path | str,
+    canvas_course_id: int,
+) -> list[dict[str, Any]]:
+    """Get all instructors for an offering from the Enrollment table.
+
+    Returns instructors (TeacherEnrollment, TaEnrollment, DesignerEnrollment)
+    with person information.
+
+    Args:
+        db_path: Path to the SQLite database.
+        canvas_course_id: Canvas course ID.
+
+    Returns:
+        List of instructor dictionaries with person and enrollment info.
+    """
+    with get_session(db_path) as session:
+        # Get the offering
+        stmt = select(Offering).where(Offering.canvas_course_id == canvas_course_id)
+        offering = session.exec(stmt).first()
+
+        if offering is None:
+            return []
+
+        # Define instructor roles
+        instructor_roles = {
+            "TeacherEnrollment",
+            "TaEnrollment",
+            "DesignerEnrollment",
+            "teacher",
+            "ta",
+            "designer",
+        }
+
+        # Get instructor enrollments
+        enrollment_stmt = (
+            select(Enrollment, Person)
+            .join(Person, Enrollment.person_id == Person.id)  # type: ignore[arg-type]
+            .where(Enrollment.offering_id == offering.id)
+            .where(Enrollment.role.in_(instructor_roles))  # type: ignore[attr-defined]
+        )
+
+        results = session.exec(enrollment_stmt).all()
+
+        return [
+            {
+                "canvas_user_id": person.canvas_user_id,
+                "person_name": person.name,
+                "role": enrollment.role,
+                "enrollment_state": enrollment.enrollment_state,
+                "source": "enrollment",  # Distinguishes from user_enrollment
+            }
+            for enrollment, person in results
         ]
