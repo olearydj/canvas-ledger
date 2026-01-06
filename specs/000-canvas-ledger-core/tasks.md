@@ -446,35 +446,35 @@
 
 ### Grade Query Implementation
 
-- [ ] T077 [P5] Implement `get_person_grades(canvas_user_id)` in `src/cl/ledger/queries.py`:
+- [X] T077 [P5] Implement `get_person_grades(canvas_user_id)` in `src/cl/ledger/queries.py`:
   - Return grade summary per offering
   - Include: offering, term, current_grade, current_score, final_grade, final_score
   - Handle null grades gracefully (show "—" or null in output)
   - Only include offerings with student enrollments (not instructor roles)
-- [ ] T078 [P5] Implement `cl query person <id> --grades` in `src/cl/cli/query_cmd.py`:
+- [X] T078 [P5] Implement `cl query person <id> --grades` in `src/cl/cli/query_cmd.py`:
   - Show performance summary
   - `--format json|csv`
 
 ### Grade Drift
 
-- [ ] T079 [P5] Update drift queries to include grade changes:
+- [X] T079 [P5] Update drift queries to include grade changes:
   - `get_person_drift()` includes grade changes if enrollment had grades
   - Track: old_grade → new_grade with timestamps
-- [ ] T080 [P5] Update `cl query drift person <id>` to show grade changes
+- [X] T080 [P5] Update `cl query drift person <id>` to show grade changes
 
 ### Export with Grades
 
-- [ ] T081 [P5] Update `cl export person <id>` to include grade data:
+- [X] T081 [P5] Update `cl export person <id>` to include grade data:
   - Add grade columns to output
   - Null grades represented appropriately per format
 
 ### Phase 5 Verification
 
-- [ ] T082 [P5] Write unit test for grade queries in `tests/unit/test_grade_queries.py`:
+- [X] T082 [P5] Write unit test for grade queries in `tests/unit/test_grade_queries.py`:
   - Test with grades present
   - Test with null grades
   - Test grade drift
-- [ ] T083 [P5] Smoke check: `cl query person <id> --grades --format json` succeeds
+- [X] T083 [P5] Smoke check: `cl query person <id> --grades --format json` succeeds
 
 **Checkpoint**: Phase 5 complete. Performance summaries available.
 

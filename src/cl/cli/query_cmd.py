@@ -6,7 +6,7 @@ Provides commands for querying the local ledger.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -21,6 +21,7 @@ from cl.ledger.queries import (
     get_offering_roster,
     get_person_by_canvas_id,
     get_person_drift,
+    get_person_grades,
     get_person_history,
 )
 
@@ -313,6 +314,14 @@ def person(
         int,
         typer.Argument(help="Canvas user ID of the person."),
     ],
+    grades: Annotated[
+        bool,
+        typer.Option(
+            "--grades",
+            "-g",
+            help="Show performance summary (grades only, student enrollments).",
+        ),
+    ] = False,
     fmt: Annotated[
         OutputFormat,
         typer.Option(
@@ -327,12 +336,16 @@ def person(
     Shows all enrollments for the specified person across offerings
     that have been deep-ingested. Sorted by term (most recent first).
 
+    Use --grades to show a performance summary (student enrollments only,
+    with grade data emphasized). This answers: "How did this person do?"
+
     Note: This only shows data from offerings that have been deep-ingested.
     Run 'cl ingest offering <id>' for each offering you want to include.
 
     Examples:
         cl query person 12345
-        cl query person 12345 --format json
+        cl query person 12345 --grades
+        cl query person 12345 --grades --format json
         cl query person 12345 --format csv
     """
     settings = load_settings()
@@ -349,6 +362,105 @@ def person(
             "Run 'cl ingest offering <id>' to fetch enrollment data for specific offerings."
         )
 
+    if grades:
+        # Show performance summary (grades only)
+        _show_person_grades(person_id, person_record, fmt, settings)
+    else:
+        # Show enrollment history
+        _show_person_history(person_id, person_record, fmt, settings)
+
+
+def _show_person_grades(
+    person_id: int, person_record: Any, fmt: OutputFormat, settings: Any
+) -> None:
+    """Show performance summary for a person (grades only)."""
+    grades_summary = get_person_grades(settings.db_path, person_id)
+
+    if grades_summary is None or not grades_summary.grades:
+        typer.echo(f"Person: {person_record.name}")
+        typer.echo(f"Canvas User ID: {person_id}")
+        typer.echo("")
+        typer.echo("No student enrollments found for this person.")
+        typer.echo("(Only student enrollments have grade data.)")
+        return
+
+    if fmt == OutputFormat.json:
+        format_output(grades_summary.to_dict(), fmt="json")
+    elif fmt == OutputFormat.csv:
+        rows = [g.to_dict() for g in grades_summary.grades]
+        headers = [
+            "offering_name",
+            "offering_code",
+            "term_name",
+            "section_name",
+            "current_grade",
+            "current_score",
+            "final_grade",
+            "final_score",
+            "enrollment_state",
+        ]
+        format_output(rows, fmt="csv", headers=headers)
+    else:
+        # Table output
+        typer.echo(f"Person: {grades_summary.person_name}")
+        typer.echo(f"Canvas User ID: {grades_summary.canvas_user_id}")
+        if grades_summary.sortable_name:
+            typer.echo(f"Sortable Name: {grades_summary.sortable_name}")
+        typer.echo("")
+
+        typer.secho(f"Performance Summary ({len(grades_summary.grades)} courses):", bold=True)
+        typer.echo("")
+
+        current_term = None
+        for entry in grades_summary.grades:
+            term = entry.term_name or "(No Term)"
+            if term != current_term:
+                current_term = term
+                typer.secho(f"  {term}", bold=True)
+
+            # Format grade display
+            grade_display = _format_grade_display(entry)
+            section_info = f" ({entry.section_name})" if entry.section_name else ""
+
+            typer.echo(f"    - {entry.offering_name}{section_info}")
+            typer.echo(f"      {grade_display}")
+
+
+def _format_grade_display(entry: Any) -> str:
+    """Format grade information for display."""
+    parts = []
+
+    if entry.final_grade or entry.final_score is not None:
+        grade = entry.final_grade or ""
+        score = f"{entry.final_score:.1f}" if entry.final_score is not None else ""
+        if grade and score:
+            parts.append(f"Final: {grade} ({score}%)")
+        elif grade:
+            parts.append(f"Final: {grade}")
+        elif score:
+            parts.append(f"Final: {score}%")
+    elif entry.current_grade or entry.current_score is not None:
+        grade = entry.current_grade or ""
+        score = f"{entry.current_score:.1f}" if entry.current_score is not None else ""
+        if grade and score:
+            parts.append(f"Current: {grade} ({score}%)")
+        elif grade:
+            parts.append(f"Current: {grade}")
+        elif score:
+            parts.append(f"Current: {score}%")
+    else:
+        parts.append("No grade data")
+
+    if entry.enrollment_state != "active":
+        parts.append(f"[{entry.enrollment_state}]")
+
+    return " ".join(parts)
+
+
+def _show_person_history(
+    person_id: int, person_record: Any, fmt: OutputFormat, settings: Any
+) -> None:
+    """Show enrollment history for a person."""
     # Get enrollment history
     history = get_person_history(settings.db_path, person_id)
 

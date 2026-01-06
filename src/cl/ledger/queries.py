@@ -982,3 +982,152 @@ def get_changes_by_ingest_run(
             )
             for c in changes
         ]
+
+
+# =============================================================================
+# Phase 5: Performance Summary Queries
+# =============================================================================
+
+
+@dataclass
+class GradeSummaryEntry:
+    """A single grade entry in a person's performance summary.
+
+    Represents grade information for one enrollment, typically a student
+    enrollment in a course. Non-student enrollments are filtered out.
+    """
+
+    canvas_course_id: int
+    offering_name: str
+    offering_code: str | None
+    term_name: str | None
+    term_start_date: datetime | None
+    section_name: str | None
+    current_grade: str | None
+    current_score: float | None
+    final_grade: str | None
+    final_score: float | None
+    enrollment_state: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "canvas_course_id": self.canvas_course_id,
+            "offering_name": self.offering_name,
+            "offering_code": self.offering_code,
+            "term_name": self.term_name,
+            "term_start_date": (self.term_start_date.isoformat() if self.term_start_date else None),
+            "section_name": self.section_name,
+            "current_grade": self.current_grade,
+            "current_score": self.current_score,
+            "final_grade": self.final_grade,
+            "final_score": self.final_score,
+            "enrollment_state": self.enrollment_state,
+        }
+
+
+@dataclass
+class PersonGradesSummary:
+    """Performance summary for a person across all student enrollments.
+
+    Contains grade information for each offering where the person is
+    enrolled as a student.
+    """
+
+    canvas_user_id: int
+    person_name: str
+    sortable_name: str | None
+    grades: list[GradeSummaryEntry]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "canvas_user_id": self.canvas_user_id,
+            "person_name": self.person_name,
+            "sortable_name": self.sortable_name,
+            "grades": [g.to_dict() for g in self.grades],
+            "total_enrollments": len(self.grades),
+        }
+
+
+def get_person_grades(
+    db_path: Path | str,
+    canvas_user_id: int,
+) -> PersonGradesSummary | None:
+    """Get performance summary (grades) for a person.
+
+    Returns grade information for all offerings where the person is
+    enrolled as a student. Non-student roles (teacher, TA, designer, etc.)
+    are filtered out since they don't have meaningful grade data.
+
+    Args:
+        db_path: Path to the SQLite database.
+        canvas_user_id: Canvas user ID.
+
+    Returns:
+        PersonGradesSummary with all student enrollment grades,
+        or None if person not found.
+    """
+    with get_session(db_path) as session:
+        # Get the person
+        stmt = select(Person).where(Person.canvas_user_id == canvas_user_id)
+        person = session.exec(stmt).first()
+
+        if person is None:
+            return None
+
+        # Define student roles (roles that can have grades)
+        student_roles = {
+            "StudentEnrollment",
+            "student",
+        }
+
+        # Get all student enrollments for this person with offering, term, and section info
+        enrollment_stmt = (
+            select(Enrollment, Offering, Term, Section)
+            .join(Offering, Enrollment.offering_id == Offering.id)  # type: ignore[arg-type]
+            .outerjoin(Term, Offering.term_id == Term.id)  # type: ignore[arg-type]
+            .outerjoin(Section, Enrollment.section_id == Section.id)  # type: ignore[arg-type]
+            .where(Enrollment.person_id == person.id)
+            .where(Enrollment.role.in_(student_roles))  # type: ignore[attr-defined]
+        )
+
+        results = session.exec(enrollment_stmt).all()
+
+        grades: list[GradeSummaryEntry] = []
+
+        for enrollment, offering, term, section in results:
+            grades.append(
+                GradeSummaryEntry(
+                    canvas_course_id=offering.canvas_course_id,
+                    offering_name=offering.name,
+                    offering_code=offering.code,
+                    term_name=term.name if term else None,
+                    term_start_date=term.start_date if term else None,
+                    section_name=section.name if section else None,
+                    current_grade=enrollment.current_grade,
+                    current_score=enrollment.current_score,
+                    final_grade=enrollment.final_grade,
+                    final_score=enrollment.final_score,
+                    enrollment_state=enrollment.enrollment_state,
+                )
+            )
+
+        # Sort by term start date (descending, nulls last), then by offering name
+        def sort_key(entry: GradeSummaryEntry) -> tuple[float, str]:
+            date = entry.term_start_date or datetime.min.replace(tzinfo=None)
+            if hasattr(date, "tzinfo") and date.tzinfo:
+                date = date.replace(tzinfo=None)
+            return (
+                -date.timestamp() if date != datetime.min else float("inf"),
+                entry.offering_name,
+            )
+
+        grades.sort(key=sort_key)
+
+        return PersonGradesSummary(
+            canvas_user_id=canvas_user_id,
+            person_name=person.name,
+            sortable_name=person.sortable_name,
+            grades=grades,
+        )
