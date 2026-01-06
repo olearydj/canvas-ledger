@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Any
 
 from sqlmodel import Session, select
 
-from cl.annotations.models import InvolvementAnnotation, LeadInstructorAnnotation
+from cl.annotations.models import (
+    CourseAlias,
+    CourseAliasOffering,
+    InvolvementAnnotation,
+    LeadInstructorAnnotation,
+)
 from cl.ledger.models import (
     ChangeLog,
     Enrollment,
@@ -1131,3 +1136,264 @@ def get_person_grades(
             sortable_name=person.sortable_name,
             grades=grades,
         )
+
+
+# =============================================================================
+# Phase 6: Course Alias Queries
+# =============================================================================
+
+
+@dataclass
+class AliasTimelineEntry:
+    """A single offering entry in an alias timeline.
+
+    Contains offering and term information for one course in the alias group.
+    """
+
+    canvas_course_id: int
+    offering_name: str
+    offering_code: str | None
+    workflow_state: str
+    term_name: str | None
+    term_start_date: datetime | None
+    # User's enrollment info if available
+    user_roles: list[str] | None = None
+    declared_involvement: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "canvas_course_id": self.canvas_course_id,
+            "offering_name": self.offering_name,
+            "offering_code": self.offering_code,
+            "workflow_state": self.workflow_state,
+            "term_name": self.term_name,
+            "term_start_date": (self.term_start_date.isoformat() if self.term_start_date else None),
+            "user_roles": self.user_roles,
+            "declared_involvement": self.declared_involvement,
+        }
+
+
+@dataclass
+class AliasTimeline:
+    """Complete timeline for a course alias.
+
+    Contains all offerings in the alias group with their term and enrollment info.
+    """
+
+    alias_name: str
+    description: str | None
+    offerings: list[AliasTimelineEntry]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "alias_name": self.alias_name,
+            "description": self.description,
+            "offerings": [o.to_dict() for o in self.offerings],
+            "total_offerings": len(self.offerings),
+        }
+
+
+def get_alias_timeline(
+    db_path: Path | str,
+    alias_name: str,
+) -> AliasTimeline | None:
+    """Get the timeline for all offerings in an alias.
+
+    Returns all offerings in the alias with their term information and
+    the user's enrollment data (if available). This provides an aggregated
+    view across related courses for canonical query Q7.
+
+    Args:
+        db_path: Path to the SQLite database.
+        alias_name: Name of the alias.
+
+    Returns:
+        AliasTimeline with all offerings, or None if alias not found.
+    """
+    with get_session(db_path) as session:
+        # Get the alias
+        alias_stmt = select(CourseAlias).where(CourseAlias.name == alias_name)
+        alias = session.exec(alias_stmt).first()
+
+        if alias is None:
+            return None
+
+        # Get all offering canvas IDs in this alias
+        assoc_stmt = select(CourseAliasOffering).where(CourseAliasOffering.alias_id == alias.id)
+        associations = session.exec(assoc_stmt).all()
+        offering_canvas_ids = [a.offering_canvas_id for a in associations]
+
+        if not offering_canvas_ids:
+            return AliasTimeline(
+                alias_name=alias.name,
+                description=alias.description,
+                offerings=[],
+            )
+
+        # Get offerings with term data
+        offerings_stmt = (
+            select(Offering, Term)
+            .outerjoin(Term, Offering.term_id == Term.id)  # type: ignore[arg-type]
+            .where(Offering.canvas_course_id.in_(offering_canvas_ids))  # type: ignore[attr-defined]
+        )
+        results = session.exec(offerings_stmt).all()
+
+        # Build lookup for user enrollments by offering
+        user_roles_by_offering: dict[int, list[str]] = {}
+        for canvas_id in offering_canvas_ids:
+            # Get offering ID
+            off_stmt = select(Offering).where(Offering.canvas_course_id == canvas_id)
+            offering = session.exec(off_stmt).first()
+            if offering:
+                # Get user enrollments
+                enroll_stmt = select(UserEnrollment).where(
+                    UserEnrollment.offering_id == offering.id
+                )
+                enrollments = session.exec(enroll_stmt).all()
+                if enrollments:
+                    user_roles_by_offering[canvas_id] = [e.role for e in enrollments]
+
+        # Build lookup for involvement annotations
+        involvement_by_offering: dict[int, str] = {}
+        for canvas_id in offering_canvas_ids:
+            inv_stmt = select(InvolvementAnnotation).where(
+                InvolvementAnnotation.offering_canvas_id == canvas_id
+            )
+            inv = session.exec(inv_stmt).first()
+            if inv:
+                involvement_by_offering[canvas_id] = inv.classification
+
+        # Build timeline entries
+        entries: list[AliasTimelineEntry] = []
+        for offering, term in results:
+            entries.append(
+                AliasTimelineEntry(
+                    canvas_course_id=offering.canvas_course_id,
+                    offering_name=offering.name,
+                    offering_code=offering.code,
+                    workflow_state=offering.workflow_state,
+                    term_name=term.name if term else None,
+                    term_start_date=term.start_date if term else None,
+                    user_roles=user_roles_by_offering.get(offering.canvas_course_id),
+                    declared_involvement=involvement_by_offering.get(offering.canvas_course_id),
+                )
+            )
+
+        # Sort by term start date (descending, nulls last), then by name
+        def sort_key(entry: AliasTimelineEntry) -> tuple[float, str]:
+            date = entry.term_start_date or datetime.min.replace(tzinfo=None)
+            if hasattr(date, "tzinfo") and date.tzinfo:
+                date = date.replace(tzinfo=None)
+            return (
+                -date.timestamp() if date != datetime.min else float("inf"),
+                entry.offering_name,
+            )
+
+        entries.sort(key=sort_key)
+
+        return AliasTimeline(
+            alias_name=alias.name,
+            description=alias.description,
+            offerings=entries,
+        )
+
+
+def get_person_history_by_alias(
+    db_path: Path | str,
+    canvas_user_id: int,
+    alias_name: str,
+) -> list[PersonHistoryEntry]:
+    """Get enrollment history for a person, filtered by an alias.
+
+    Returns only enrollments in offerings that belong to the specified alias.
+    Useful for tracking a person's involvement across related courses.
+
+    Args:
+        db_path: Path to the SQLite database.
+        canvas_user_id: Canvas user ID.
+        alias_name: Name of the alias to filter by.
+
+    Returns:
+        List of PersonHistoryEntry objects for offerings in the alias,
+        sorted by term (most recent first).
+    """
+    with get_session(db_path) as session:
+        # Get the alias
+        alias_stmt = select(CourseAlias).where(CourseAlias.name == alias_name)
+        alias = session.exec(alias_stmt).first()
+
+        if alias is None:
+            return []
+
+        # Get offering canvas IDs in the alias
+        assoc_stmt = select(CourseAliasOffering).where(CourseAliasOffering.alias_id == alias.id)
+        associations = session.exec(assoc_stmt).all()
+        alias_offering_ids = {a.offering_canvas_id for a in associations}
+
+        if not alias_offering_ids:
+            return []
+
+        # Get the person
+        person_stmt = select(Person).where(Person.canvas_user_id == canvas_user_id)
+        person = session.exec(person_stmt).first()
+
+        if person is None:
+            return []
+
+        # Get internal offering IDs for the alias offerings
+        offerings_stmt = select(Offering).where(
+            Offering.canvas_course_id.in_(alias_offering_ids)  # type: ignore[attr-defined]
+        )
+        offerings = session.exec(offerings_stmt).all()
+        internal_offering_ids = {o.id for o in offerings}
+
+        if not internal_offering_ids:
+            return []
+
+        # Get enrollments for this person in alias offerings
+        enrollment_stmt = (
+            select(Enrollment, Offering, Term, Section)
+            .join(Offering, Enrollment.offering_id == Offering.id)  # type: ignore[arg-type]
+            .outerjoin(Term, Offering.term_id == Term.id)  # type: ignore[arg-type]
+            .outerjoin(Section, Enrollment.section_id == Section.id)  # type: ignore[arg-type]
+            .where(Enrollment.person_id == person.id)
+            .where(Enrollment.offering_id.in_(internal_offering_ids))  # type: ignore[attr-defined]
+        )
+
+        results = session.exec(enrollment_stmt).all()
+
+        entries: list[PersonHistoryEntry] = []
+        for enrollment, offering, term, section in results:
+            entries.append(
+                PersonHistoryEntry(
+                    canvas_course_id=offering.canvas_course_id,
+                    offering_name=offering.name,
+                    offering_code=offering.code,
+                    term_name=term.name if term else None,
+                    term_start_date=term.start_date if term else None,
+                    section_name=section.name if section else None,
+                    section_canvas_id=section.canvas_section_id if section else None,
+                    role=enrollment.role,
+                    enrollment_state=enrollment.enrollment_state,
+                    current_grade=enrollment.current_grade,
+                    current_score=enrollment.current_score,
+                    final_grade=enrollment.final_grade,
+                    final_score=enrollment.final_score,
+                )
+            )
+
+        # Sort by term start date (descending, nulls last), then by offering name
+        def sort_key(entry: PersonHistoryEntry) -> tuple[float, str]:
+            date = entry.term_start_date or datetime.min.replace(tzinfo=None)
+            if hasattr(date, "tzinfo") and date.tzinfo:
+                date = date.replace(tzinfo=None)
+            return (
+                -date.timestamp() if date != datetime.min else float("inf"),
+                entry.offering_name,
+            )
+
+        entries.sort(key=sort_key)
+
+        return entries

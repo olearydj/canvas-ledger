@@ -490,47 +490,62 @@
 
 ### Alias Annotation Model
 
-- [ ] T084 [P6] Design and implement alias model in `src/cl/annotations/models.py`:
-  - `CourseAlias`: alias_name, created_at
-  - `CourseAliasOffering`: alias_id FK, offering_canvas_id
-  - Many-to-many: one offering can be in multiple aliases (or enforce single alias—decide)
-  - Review design
-- [ ] T085 [P6] Create Alembic migration (006) for alias tables
+- [X] T084 [P6] Design and implement alias model in `src/cl/annotations/models.py`:
+  - `CourseAlias`: alias_name, description, created_at, updated_at
+  - `CourseAliasOffering`: alias_id FK, offering_canvas_id, created_at
+  - Many-to-many: one offering can be in multiple aliases
+  - Unique constraint: an offering can only be in an alias once
+- [X] T085 [P6] Create Alembic migration (006) for alias tables
+  - `course_alias` table with name (unique), description, timestamps
+  - `course_alias_offering` association table
+  - Indexes for efficient queries
 
 ### Alias Management
 
-- [ ] T086 [P6] Implement alias operations in `src/cl/annotations/manager.py`:
-  - `create_alias(name, offering_canvas_ids)` — create alias with initial offerings
+- [X] T086 [P6] Implement alias operations in `src/cl/annotations/manager.py`:
+  - `create_alias(name, offering_canvas_ids, description)` — create alias with initial offerings
   - `add_to_alias(alias_name, offering_canvas_id)` — add offering to existing alias
   - `remove_from_alias(alias_name, offering_canvas_id)`
-  - `list_aliases()`
-  - `get_alias_offerings(alias_name)` — return all offerings in alias
+  - `delete_alias(alias_name)` — remove alias and all associations
+  - `list_aliases()` — returns aliases with offering counts
+  - `get_alias(alias_name)` — get alias by name
+  - `get_alias_offerings(alias_name)` — return all offering canvas IDs in alias
+  - `get_offering_aliases(offering_canvas_id)` — get all aliases containing an offering
+  - Exception classes: AliasNotFoundError, AliasAlreadyExistsError, OfferingAlreadyInAliasError, OfferingNotInAliasError
 
 ### Alias CLI Commands
 
-- [ ] T087 [P6] Implement alias commands in `src/cl/cli/annotate_cmd.py`:
-  - `cl annotate alias create <name> <offering_ids...>`
+- [X] T087 [P6] Implement alias commands in `src/cl/cli/annotate_cmd.py`:
+  - `cl annotate alias create <name> [offering_ids...] [--description]`
   - `cl annotate alias add <name> <offering_id>`
   - `cl annotate alias remove <name> <offering_id>`
-  - `cl annotate alias list`
+  - `cl annotate alias delete <name> [--force]`
+  - `cl annotate alias list [--format]`
+  - `cl annotate alias show <name> [--format]`
 
 ### Alias Queries
 
-- [ ] T088 [P6] Implement `get_alias_timeline(alias_name)` in `src/cl/ledger/queries.py`:
+- [X] T088 [P6] Implement `get_alias_timeline(alias_name)` in `src/cl/ledger/queries.py`:
   - Return all offerings in alias with term, role info
   - Aggregated view across related courses
-- [ ] T089 [P6] Implement `cl query alias <name>` in `src/cl/cli/query_cmd.py`:
-  - Show all offerings in alias
-  - `--format json|csv`
-- [ ] T090 [P6] Consider: Allow `cl query person <id> --alias <name>` to filter by alias
-  - Optional enhancement for cross-alias person history
+  - Also: `get_person_history_by_alias()` for filtered person history
+- [X] T089 [P6] Implement `cl query alias <name>` in `src/cl/cli/query_cmd.py`:
+  - Show all offerings in alias grouped by term
+  - `--format json|csv|table`
+- [X] T090 [P6] Implement `cl query person <id> --alias <name>` to filter by alias:
+  - Filter person enrollment history to offerings in the specified alias
+  - Useful for tracking history with a course identity across terms
 
 ### Phase 6 Verification
 
-- [ ] T091 [P6] Write unit test for alias management in `tests/unit/test_aliases.py`:
-  - Test create, add, remove, list
-  - Test get_alias_offerings
-- [ ] T092 [P6] Smoke check: Create alias, add offerings, query alias
+- [X] T091 [P6] Write unit test for alias management in `tests/unit/test_aliases.py`:
+  - Test create, add, remove, delete, list
+  - Test get_alias, get_alias_offerings, get_offering_aliases
+  - Test get_alias_timeline query
+  - 26 tests covering all operations
+- [X] T092 [P6] Smoke check: Create alias, add offerings, query alias
+  - CLI commands verified working
+  - All 166 tests passing
 
 **Checkpoint**: Phase 6 complete. Course identity continuity supported.
 

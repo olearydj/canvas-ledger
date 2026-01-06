@@ -14,6 +14,7 @@ from cl.cli.main import cli_error
 from cl.config.settings import load_settings
 from cl.export.formatters import format_output
 from cl.ledger.queries import (
+    get_alias_timeline,
     get_my_timeline,
     get_offering_by_canvas_id,
     get_offering_drift,
@@ -23,6 +24,7 @@ from cl.ledger.queries import (
     get_person_drift,
     get_person_grades,
     get_person_history,
+    get_person_history_by_alias,
 )
 
 app = typer.Typer(
@@ -322,6 +324,14 @@ def person(
             help="Show performance summary (grades only, student enrollments).",
         ),
     ] = False,
+    alias: Annotated[
+        str | None,
+        typer.Option(
+            "--alias",
+            "-a",
+            help="Filter enrollments to offerings in this alias only.",
+        ),
+    ] = None,
     fmt: Annotated[
         OutputFormat,
         typer.Option(
@@ -339,6 +349,10 @@ def person(
     Use --grades to show a performance summary (student enrollments only,
     with grade data emphasized). This answers: "How did this person do?"
 
+    Use --alias to filter results to only offerings in a specific alias.
+    This is useful for tracking a person's history with a logical course
+    that has multiple offerings over time.
+
     Note: This only shows data from offerings that have been deep-ingested.
     Run 'cl ingest offering <id>' for each offering you want to include.
 
@@ -347,6 +361,7 @@ def person(
         cl query person 12345 --grades
         cl query person 12345 --grades --format json
         cl query person 12345 --format csv
+        cl query person 12345 --alias "BET 3510"
     """
     settings = load_settings()
 
@@ -364,10 +379,13 @@ def person(
 
     if grades:
         # Show performance summary (grades only)
+        # Note: --grades and --alias are mutually exclusive for now
+        if alias:
+            typer.echo("Note: --alias filter is not applied when using --grades.")
         _show_person_grades(person_id, person_record, fmt, settings)
     else:
         # Show enrollment history
-        _show_person_history(person_id, person_record, fmt, settings)
+        _show_person_history(person_id, person_record, fmt, settings, alias_filter=alias)
 
 
 def _show_person_grades(
@@ -458,15 +476,31 @@ def _format_grade_display(entry: Any) -> str:
 
 
 def _show_person_history(
-    person_id: int, person_record: Any, fmt: OutputFormat, settings: Any
+    person_id: int,
+    person_record: Any,
+    fmt: OutputFormat,
+    settings: Any,
+    alias_filter: str | None = None,
 ) -> None:
     """Show enrollment history for a person."""
-    # Get enrollment history
-    history = get_person_history(settings.db_path, person_id)
+    # Get enrollment history (optionally filtered by alias)
+    if alias_filter:
+        history = get_person_history_by_alias(settings.db_path, person_id, alias_filter)
+        if not history:
+            # Check if alias exists
+            from cl.annotations.manager import get_alias
+
+            alias = get_alias(settings.db_path, alias_filter)
+            if alias is None:
+                cli_error(f"Alias '{alias_filter}' not found.")
+    else:
+        history = get_person_history(settings.db_path, person_id)
 
     if not history:
         typer.echo(f"Person: {person_record.name}")
         typer.echo(f"Canvas User ID: {person_id}")
+        if alias_filter:
+            typer.echo(f"Alias Filter: {alias_filter}")
         typer.echo("")
         typer.echo("No enrollments found for this person.")
         return
@@ -521,6 +555,97 @@ def _show_person_history(
             typer.echo(
                 f"    - {entry.offering_name}{section_info}\n"
                 f"      {entry.role}, {entry.enrollment_state}{grade_info}"
+            )
+
+
+# =============================================================================
+# Alias Query Command (Phase 6)
+# =============================================================================
+
+
+@app.command("alias")
+def alias_query(
+    alias_name: Annotated[
+        str,
+        typer.Argument(help="Name of the alias to query."),
+    ],
+    fmt: Annotated[
+        OutputFormat,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format.",
+        ),
+    ] = OutputFormat.table,
+) -> None:
+    """Query all offerings in a course alias.
+
+    Shows all offerings grouped under the specified alias, with term
+    information and your enrollment data where available. This is the
+    primary answer to: "What is the history of this course identity?"
+
+    Examples:
+        cl query alias "BET 3510"
+        cl query alias "Intro Programming" --format json
+    """
+    settings = load_settings()
+
+    if not settings.db_path.exists():
+        cli_error(f"Database not found at {settings.db_path}. Run 'cl db migrate' to initialize.")
+
+    timeline = get_alias_timeline(settings.db_path, alias_name)
+
+    if timeline is None:
+        cli_error(
+            f"Alias '{alias_name}' not found. Use 'cl annotate alias list' to see available aliases."
+        )
+
+    if fmt == OutputFormat.json:
+        format_output(timeline.to_dict(), fmt="json")
+    elif fmt == OutputFormat.csv:
+        # Flatten for CSV
+        rows = [o.to_dict() for o in timeline.offerings]
+        headers = [
+            "offering_name",
+            "offering_code",
+            "term_name",
+            "workflow_state",
+            "user_roles",
+            "declared_involvement",
+            "canvas_course_id",
+        ]
+        format_output(rows, fmt="csv", headers=headers)
+    else:
+        # Table output
+        typer.echo(f"Alias: {timeline.alias_name}")
+        if timeline.description:
+            typer.echo(f"Description: {timeline.description}")
+        typer.echo("")
+
+        if not timeline.offerings:
+            typer.echo("No offerings in this alias.")
+            return
+
+        typer.secho(f"Offerings ({len(timeline.offerings)}):", bold=True)
+        typer.echo("")
+
+        current_term = None
+        for entry in timeline.offerings:
+            term = entry.term_name or "(No Term)"
+            if term != current_term:
+                current_term = term
+                typer.secho(f"  {term}", bold=True)
+
+            # Build role info
+            role_info = ""
+            if entry.user_roles:
+                role_info = f" [{', '.join(entry.user_roles)}]"
+            elif entry.declared_involvement:
+                role_info = f" [{entry.declared_involvement}]"
+
+            code = f"[{entry.offering_code}] " if entry.offering_code else ""
+            typer.echo(
+                f"    - {code}{entry.offering_name} (ID: {entry.canvas_course_id}){role_info}"
             )
 
 

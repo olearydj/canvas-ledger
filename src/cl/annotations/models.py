@@ -27,6 +27,7 @@ class AnnotationType(str, Enum):
 
     LEAD_INSTRUCTOR = "lead_instructor"
     INVOLVEMENT = "involvement"
+    COURSE_ALIAS = "course_alias"
 
 
 class LeadDesignation(str, Enum):
@@ -108,4 +109,71 @@ class InvolvementAnnotation(SQLModel, table=True):
             "classification": self.classification,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# =============================================================================
+# Phase 6: Course Identity / Aliasing
+# =============================================================================
+
+
+class CourseAlias(SQLModel, table=True):
+    """Group related offerings under a common alias name.
+
+    Course aliases allow users to maintain continuity across:
+    - Course renumbering (e.g., "CS 101" → "COMP 1010")
+    - Special topics courses that represent different real courses
+    - Local naming conventions or shorthand
+
+    An alias groups multiple offerings so they can be queried together.
+    This supports canonical query Q7: course identity continuity.
+
+    Design decision: An offering can belong to multiple aliases. This supports
+    cases like a course that is both renamed and also a special topics instance.
+    """
+
+    __tablename__ = "course_alias"
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)  # The alias name (e.g., "BET 3510")
+    description: str | None = None  # Optional description explaining the alias
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "annotation_type": AnnotationType.COURSE_ALIAS.value,
+            "name": self.name,
+            "description": self.description,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class CourseAliasOffering(SQLModel, table=True):
+    """Association between a CourseAlias and an Offering.
+
+    This is a many-to-many relationship table. Each row links one alias
+    to one offering via its Canvas course ID.
+
+    References offerings by Canvas ID (not internal FK) so associations
+    survive re-ingestion of offering data.
+    """
+
+    __tablename__ = "course_alias_offering"
+
+    id: int | None = Field(default=None, primary_key=True)
+    alias_id: int = Field(foreign_key="course_alias.id", index=True)
+    offering_canvas_id: int = Field(index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "alias_id": self.alias_id,
+            "offering_canvas_id": self.offering_canvas_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }

@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 from sqlmodel import Session, select
 
 from cl.annotations.models import (
+    CourseAlias,
+    CourseAliasOffering,
     InvolvementAnnotation,
     LeadDesignation,
     LeadInstructorAnnotation,
@@ -341,3 +343,332 @@ def remove_annotation(
             f"Invalid annotation type '{annotation_type}'. "
             "Must be 'lead_instructor' or 'involvement'."
         )
+
+
+# =============================================================================
+# Phase 6: Course Alias Operations
+# =============================================================================
+
+
+class AliasNotFoundError(AnnotationError):
+    """Raised when a course alias is not found."""
+
+    def __init__(self, alias_name: str) -> None:
+        self.alias_name = alias_name
+        super().__init__(f"Alias '{alias_name}' not found.")
+
+
+class AliasAlreadyExistsError(AnnotationError):
+    """Raised when trying to create an alias that already exists."""
+
+    def __init__(self, alias_name: str) -> None:
+        self.alias_name = alias_name
+        super().__init__(f"Alias '{alias_name}' already exists.")
+
+
+class OfferingAlreadyInAliasError(AnnotationError):
+    """Raised when an offering is already in the specified alias."""
+
+    def __init__(self, alias_name: str, offering_canvas_id: int) -> None:
+        self.alias_name = alias_name
+        self.offering_canvas_id = offering_canvas_id
+        super().__init__(f"Offering {offering_canvas_id} is already in alias '{alias_name}'.")
+
+
+class OfferingNotInAliasError(AnnotationError):
+    """Raised when an offering is not in the specified alias."""
+
+    def __init__(self, alias_name: str, offering_canvas_id: int) -> None:
+        self.alias_name = alias_name
+        self.offering_canvas_id = offering_canvas_id
+        super().__init__(f"Offering {offering_canvas_id} is not in alias '{alias_name}'.")
+
+
+def create_alias(
+    db_path: Path | str,
+    name: str,
+    offering_canvas_ids: list[int] | None = None,
+    description: str | None = None,
+) -> CourseAlias:
+    """Create a new course alias with optional initial offerings.
+
+    Args:
+        db_path: Path to the SQLite database.
+        name: Name for the alias (must be unique).
+        offering_canvas_ids: Optional list of Canvas course IDs to add initially.
+        description: Optional description of the alias.
+
+    Returns:
+        The created CourseAlias.
+
+    Raises:
+        AliasAlreadyExistsError: If an alias with this name already exists.
+        OfferingNotFoundError: If any of the offerings are not found locally.
+    """
+    with get_session(db_path) as session:
+        # Check if alias already exists
+        existing_stmt = select(CourseAlias).where(CourseAlias.name == name)
+        if session.exec(existing_stmt).first() is not None:
+            raise AliasAlreadyExistsError(name)
+
+        # Validate all offerings exist (if provided)
+        if offering_canvas_ids:
+            for canvas_id in offering_canvas_ids:
+                _validate_offering_exists(session, canvas_id)
+
+        # Create the alias
+        alias = CourseAlias(
+            name=name,
+            description=description,
+        )
+        session.add(alias)
+        session.flush()  # Get the ID
+
+        # Add initial offerings
+        if offering_canvas_ids:
+            for canvas_id in offering_canvas_ids:
+                association = CourseAliasOffering(
+                    alias_id=alias.id,
+                    offering_canvas_id=canvas_id,
+                )
+                session.add(association)
+
+        session.commit()
+        session.refresh(alias)
+        return alias
+
+
+def add_to_alias(
+    db_path: Path | str,
+    alias_name: str,
+    offering_canvas_id: int,
+) -> CourseAliasOffering:
+    """Add an offering to an existing alias.
+
+    Args:
+        db_path: Path to the SQLite database.
+        alias_name: Name of the alias.
+        offering_canvas_id: Canvas course ID of the offering to add.
+
+    Returns:
+        The created CourseAliasOffering association.
+
+    Raises:
+        AliasNotFoundError: If the alias is not found.
+        OfferingNotFoundError: If the offering is not found locally.
+        OfferingAlreadyInAliasError: If the offering is already in the alias.
+    """
+    with get_session(db_path) as session:
+        # Get the alias
+        alias_stmt = select(CourseAlias).where(CourseAlias.name == alias_name)
+        alias = session.exec(alias_stmt).first()
+        if alias is None:
+            raise AliasNotFoundError(alias_name)
+
+        # Validate offering exists
+        _validate_offering_exists(session, offering_canvas_id)
+
+        # Check if already in alias
+        existing_stmt = select(CourseAliasOffering).where(
+            CourseAliasOffering.alias_id == alias.id,
+            CourseAliasOffering.offering_canvas_id == offering_canvas_id,
+        )
+        if session.exec(existing_stmt).first() is not None:
+            raise OfferingAlreadyInAliasError(alias_name, offering_canvas_id)
+
+        # Create association
+        association = CourseAliasOffering(
+            alias_id=alias.id,
+            offering_canvas_id=offering_canvas_id,
+        )
+        session.add(association)
+
+        # Update alias timestamp
+        alias.updated_at = _utcnow()
+        session.add(alias)
+
+        session.commit()
+        session.refresh(association)
+        return association
+
+
+def remove_from_alias(
+    db_path: Path | str,
+    alias_name: str,
+    offering_canvas_id: int,
+) -> None:
+    """Remove an offering from an alias.
+
+    Args:
+        db_path: Path to the SQLite database.
+        alias_name: Name of the alias.
+        offering_canvas_id: Canvas course ID of the offering to remove.
+
+    Raises:
+        AliasNotFoundError: If the alias is not found.
+        OfferingNotInAliasError: If the offering is not in the alias.
+    """
+    with get_session(db_path) as session:
+        # Get the alias
+        alias_stmt = select(CourseAlias).where(CourseAlias.name == alias_name)
+        alias = session.exec(alias_stmt).first()
+        if alias is None:
+            raise AliasNotFoundError(alias_name)
+
+        # Find the association
+        assoc_stmt = select(CourseAliasOffering).where(
+            CourseAliasOffering.alias_id == alias.id,
+            CourseAliasOffering.offering_canvas_id == offering_canvas_id,
+        )
+        association = session.exec(assoc_stmt).first()
+        if association is None:
+            raise OfferingNotInAliasError(alias_name, offering_canvas_id)
+
+        # Remove association
+        session.delete(association)
+
+        # Update alias timestamp
+        alias.updated_at = _utcnow()
+        session.add(alias)
+
+        session.commit()
+
+
+def delete_alias(
+    db_path: Path | str,
+    alias_name: str,
+) -> None:
+    """Delete an alias and all its offering associations.
+
+    Args:
+        db_path: Path to the SQLite database.
+        alias_name: Name of the alias to delete.
+
+    Raises:
+        AliasNotFoundError: If the alias is not found.
+    """
+    from sqlalchemy import delete as sa_delete
+
+    with get_session(db_path) as session:
+        # Get the alias
+        alias_stmt = select(CourseAlias).where(CourseAlias.name == alias_name)
+        alias = session.exec(alias_stmt).first()
+        if alias is None:
+            raise AliasNotFoundError(alias_name)
+
+        # Delete all associations first using bulk delete
+        delete_stmt = sa_delete(CourseAliasOffering).where(
+            CourseAliasOffering.alias_id == alias.id  # type: ignore[arg-type]
+        )
+        session.execute(delete_stmt)
+
+        # Delete the alias
+        session.delete(alias)
+        session.commit()
+
+
+def list_aliases(
+    db_path: Path | str,
+) -> list[dict[str, Any]]:
+    """List all course aliases with their offering counts.
+
+    Args:
+        db_path: Path to the SQLite database.
+
+    Returns:
+        List of alias dictionaries with offering counts.
+    """
+    with get_session(db_path) as session:
+        stmt = select(CourseAlias).order_by(CourseAlias.name)
+        aliases = session.exec(stmt).all()
+
+        results: list[dict[str, Any]] = []
+        for alias in aliases:
+            # Count offerings in this alias
+            count_stmt = select(CourseAliasOffering).where(CourseAliasOffering.alias_id == alias.id)
+            offering_count = len(session.exec(count_stmt).all())
+
+            result = alias.to_dict()
+            result["offering_count"] = offering_count
+            results.append(result)
+
+        return results
+
+
+def get_alias(
+    db_path: Path | str,
+    alias_name: str,
+) -> CourseAlias | None:
+    """Get an alias by name.
+
+    Args:
+        db_path: Path to the SQLite database.
+        alias_name: Name of the alias.
+
+    Returns:
+        The CourseAlias or None if not found.
+    """
+    with get_session(db_path) as session:
+        stmt = select(CourseAlias).where(CourseAlias.name == alias_name)
+        return session.exec(stmt).first()
+
+
+def get_alias_offerings(
+    db_path: Path | str,
+    alias_name: str,
+) -> list[int]:
+    """Get all offering Canvas IDs in an alias.
+
+    Args:
+        db_path: Path to the SQLite database.
+        alias_name: Name of the alias.
+
+    Returns:
+        List of Canvas course IDs in the alias.
+
+    Raises:
+        AliasNotFoundError: If the alias is not found.
+    """
+    with get_session(db_path) as session:
+        # Get the alias
+        alias_stmt = select(CourseAlias).where(CourseAlias.name == alias_name)
+        alias = session.exec(alias_stmt).first()
+        if alias is None:
+            raise AliasNotFoundError(alias_name)
+
+        # Get all offering IDs
+        assoc_stmt = select(CourseAliasOffering).where(CourseAliasOffering.alias_id == alias.id)
+        associations = session.exec(assoc_stmt).all()
+
+        return [assoc.offering_canvas_id for assoc in associations]
+
+
+def get_offering_aliases(
+    db_path: Path | str,
+    offering_canvas_id: int,
+) -> list[CourseAlias]:
+    """Get all aliases that contain a specific offering.
+
+    Args:
+        db_path: Path to the SQLite database.
+        offering_canvas_id: Canvas course ID.
+
+    Returns:
+        List of CourseAlias objects that contain this offering.
+    """
+    with get_session(db_path) as session:
+        # Get all associations for this offering
+        assoc_stmt = select(CourseAliasOffering).where(
+            CourseAliasOffering.offering_canvas_id == offering_canvas_id
+        )
+        associations = session.exec(assoc_stmt).all()
+
+        # Get the aliases
+        aliases: list[CourseAlias] = []
+        for assoc in associations:
+            alias_stmt = select(CourseAlias).where(CourseAlias.id == assoc.alias_id)
+            alias = session.exec(alias_stmt).first()
+            if alias:
+                aliases.append(alias)
+
+        return aliases
