@@ -14,7 +14,12 @@ from cl.ledger.store import get_db_info, get_migration_status, run_migrations
 
 app = typer.Typer(
     name="db",
-    help="Database operations for canvas-ledger.",
+    help="""Database operations for canvas-ledger.
+
+The ledger is stored in a local SQLite database (~/.local/share/cl/ledger.db
+by default). Run 'cl db migrate' after first install and after updates to
+ensure the schema is current.
+""",
     no_args_is_help=True,
 )
 
@@ -40,8 +45,13 @@ def db_migrate(
 ) -> None:
     """Run pending database migrations.
 
-    Creates a backup of the database before applying migrations
-    (unless --no-backup is specified).
+    Applies any schema changes needed for the current version of canvas-ledger.
+    A backup is created automatically before migration (unless --no-backup).
+    \b
+    When to run:
+      • After first install (creates the database)
+      • After updating canvas-ledger
+      • If 'cl db status' shows pending migrations
     """
     db_path = _get_db_path()
 

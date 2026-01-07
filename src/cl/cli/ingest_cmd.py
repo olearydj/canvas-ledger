@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Annotated
 import typer
 
 from cl.canvas.client import CanvasAuthenticationError, CanvasClient, CanvasClientError
-from cl.cli.main import cli_error, cli_success, cli_warning
+from cl.cli.output import cli_error, cli_success, cli_warning
 from cl.config.secrets import SecretProviderError, get_canvas_token
 from cl.config.settings import Settings, load_settings
 from cl.export.formatters import format_output
@@ -21,7 +21,18 @@ if TYPE_CHECKING:
 
 app = typer.Typer(
     name="ingest",
-    help="Ingest data from Canvas.",
+    help="""Ingest data from Canvas into the local ledger.
+
+Ingestion has two levels:
+\b
+  CATALOG   'cl ingest catalog' fetches all courses visible to you—names,
+            codes, terms, and your role. Fast and safe to run anytime.
+  OFFERING  'cl ingest offering <id>' fetches full details for one course—
+            sections, enrollments, grades. Use for courses you query deeply.
+
+All ingestion is read-only and idempotent. Re-running updates records
+and tracks changes ("drift") over time.
+""",
     no_args_is_help=True,
 )
 
@@ -58,11 +69,20 @@ def catalog(
 ) -> None:
     """Ingest all courses visible to you from Canvas.
 
-    Fetches all courses you have access to (regardless of role: teacher,
-    TA, student, observer, etc.) and stores them in the local ledger.
+    Fetches every course you can access (as teacher, TA, student, observer,
+    etc.) along with term information and your observed roles.
+    \b
+    What this ingests:
+      • Course metadata (name, code, workflow state)
+      • Term associations
+      • Your enrollment role(s) in each course
+    \b
+    What this does NOT ingest (use 'cl ingest offering' for these):
+      • Other people's enrollments
+      • Sections
+      • Grades
 
-    This is idempotent: running it multiple times will update existing
-    records and add new ones, but will not create duplicates.
+    Idempotent: safe to run repeatedly. Re-runs detect and track changes.
     """
     settings = load_settings()
 
@@ -124,17 +144,25 @@ def offering_cmd(
 ) -> None:
     """Deep ingest a specific offering (sections, enrollments, people).
 
-    Fetches all sections, enrollments (all roles), and person data for
-    the specified offering and stores them in the local ledger.
+    Fetches complete data for one course, enabling roster queries, person
+    history, and grade tracking for that course.
+    \b
+    What this ingests:
+      • All sections in the course
+      • All enrollments (students, TAs, teachers, observers)
+      • Person details (name, SIS ID)
+      • Grades (current and final, where available)
+    \b
+    Prerequisites:
+      • Run 'cl ingest catalog' first so the offering exists locally
+      • Find the Canvas course ID: it's in the URL when viewing the course
 
-    The offering must already exist locally (run 'cl ingest catalog' first).
-
-    This is idempotent: running it multiple times will update existing
-    records and add new ones, but will not create duplicates.
-
+    Idempotent: safe to run repeatedly. Re-runs detect add/drop changes
+    and grade updates, tracked as "drift" in the change log.
+    \b
     Examples:
-        cl ingest offering 12345
-        cl ingest offering 12345 --quiet
+      cl ingest offering 12345
+      cl ingest offering 12345 --quiet
     """
     settings = load_settings()
 
@@ -192,8 +220,11 @@ def status(
 ) -> None:
     """Show the last ingestion run details.
 
-    Displays information about the most recent ingestion run,
-    including timestamp, scope, status, and counts.
+    Displays information about the most recent ingestion run:
+    timestamp, scope (catalog or offering), status, and record counts.
+
+    Useful for verifying that ingestion completed successfully and
+    reviewing what changed.
     """
     settings = load_settings()
 

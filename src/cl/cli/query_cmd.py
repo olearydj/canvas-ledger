@@ -10,7 +10,7 @@ from typing import Annotated, Any
 
 import typer
 
-from cl.cli.main import cli_error
+from cl.cli.output import cli_error
 from cl.config.settings import load_settings
 from cl.export.formatters import format_output
 from cl.ledger.queries import (
@@ -29,7 +29,7 @@ from cl.ledger.queries import (
 
 app = typer.Typer(
     name="query",
-    help="Query the local ledger.",
+    help="Query the local ledger for historical Canvas data. All queries support --format json|csv|table. Data comes from your local ledger—no Canvas API calls.",
     no_args_is_help=True,
 )
 
@@ -71,11 +71,17 @@ def my_timeline(
 ) -> None:
     """Show your involvement timeline across all offerings.
 
-    Displays all offerings you have enrollments in, sorted by term
-    (most recent first). Shows your role(s) in each offering, along
-    with any declared involvement annotations.
+    Answers: "What courses have I taught or taken, and when?"
 
-    This is the primary answer to: "What courses have I been involved in?"
+    Displays all offerings you have enrollments in, sorted by term
+    (most recent first). Shows both your observed Canvas roles AND
+    any declared involvement annotations you've added.
+    \b
+    Examples:
+      cl query my-timeline                      # All courses, all time
+      cl query my-timeline --term "Fall 2024"   # Filter by term
+      cl query my-timeline --role teacher       # Only courses where you taught
+      cl query my-timeline --format csv > my_courses.csv
     """
     settings = load_settings()
 
@@ -148,13 +154,15 @@ def offering(
 ) -> None:
     """Query information about a specific offering.
 
-    By default, shows basic offering information.
-    Use --instructors to see who is responsible for the course.
-    Use --roster to see the full enrollment roster grouped by section.
+    Answers: "Who was in this course?" and "Who was responsible for it?"
+    \b
+    Modes:
+      (default)       Basic course metadata
+      --instructors   Who taught it (observed roles + declared lead)
+      --roster        Full enrollment roster grouped by section
 
-    Note: Roster information requires deep ingestion. Run
-    'cl ingest offering <id>' first to populate enrollment data.
-
+    Note: --roster requires deep ingestion. Run 'cl ingest offering <id>' first.
+    \b
     Examples:
         cl query offering 12345
         cl query offering 12345 --instructors
@@ -178,136 +186,163 @@ def offering(
         )
 
     if roster:
-        # Show roster grouped by section
-        roster_data = get_offering_roster(settings.db_path, offering_id)
-        if roster_data is None:
-            cli_error(f"Offering {offering_id} not found.")
-
-        if not roster_data.sections:
-            typer.echo(
-                f"No enrollments found for offering {offering_id}.\n"
-                "Run 'cl ingest offering <id>' to fetch enrollment data."
-            )
-            return
-
-        if fmt == OutputFormat.json:
-            format_output(roster_data.to_dict(), fmt="json")
-        elif fmt == OutputFormat.csv:
-            # Flatten for CSV - one row per enrollment
-            rows = []
-            for _section_name, entries in roster_data.sections.items():
-                for entry in entries:
-                    rows.append(entry.to_dict())
-            headers = [
-                "section_name",
-                "person_name",
-                "canvas_user_id",
-                "role",
-                "enrollment_state",
-            ]
-            format_output(rows, fmt="csv", headers=headers)
-        else:
-            # Table output - group by section
-            typer.echo(f"Roster for: {roster_data.offering_name}")
-            typer.echo(f"Code: {roster_data.offering_code or '(none)'}")
-            typer.echo(f"Canvas ID: {roster_data.canvas_course_id}")
-            typer.echo("")
-
-            for section_name, entries in sorted(roster_data.sections.items()):
-                typer.secho(f"Section: {section_name} ({len(entries)} enrollments)", bold=True)
-                for entry in entries:
-                    grade_info = ""
-                    if entry.current_grade or entry.final_grade:
-                        grade_info = f" [{entry.current_grade or entry.final_grade}]"
-                    typer.echo(
-                        f"  - {entry.person_name} ({entry.role}, {entry.enrollment_state}){grade_info}"
-                    )
-                typer.echo("")
-
+        _handle_offering_roster(offering_id, fmt, settings)
     elif instructors:
-        # Show instructor responsibility information
-        resp = get_offering_responsibility(settings.db_path, offering_id)
-        if resp is None:
-            cli_error(f"Could not get responsibility info for offering {offering_id}.")
-
-        if fmt == OutputFormat.json:
-            format_output(resp.to_dict(), fmt="json")
-        elif fmt == OutputFormat.csv:
-            # Flatten for CSV
-            rows = []
-            for inst in resp.observed_instructors:
-                rows.append(
-                    {
-                        "canvas_course_id": resp.canvas_course_id,
-                        "offering_name": resp.offering_name,
-                        "canvas_user_id": inst.get("canvas_user_id", ""),
-                        "person_name": inst.get("person_name", "(your enrollment)"),
-                        "role": inst["role"],
-                        "enrollment_state": inst["enrollment_state"],
-                        "source": inst["source"],
-                        "is_declared_lead": "yes"
-                        if resp.declared_lead
-                        and inst.get("canvas_user_id") == resp.declared_lead.get("person_canvas_id")
-                        else "no",
-                    }
-                )
-            if not rows:
-                rows = [
-                    {
-                        "canvas_course_id": resp.canvas_course_id,
-                        "offering_name": resp.offering_name,
-                        "note": "No instructors found",
-                    }
-                ]
-            format_output(rows, fmt="csv")
-        else:
-            # Table output
-            typer.echo(f"Offering: {resp.offering_name}")
-            typer.echo(f"Code: {resp.offering_code or '(none)'}")
-            typer.echo(f"Canvas ID: {resp.canvas_course_id}")
-            typer.echo("")
-
-            typer.secho("Observed Instructors:", bold=True)
-            if resp.observed_instructors:
-                for inst in resp.observed_instructors:
-                    name = inst.get("person_name", "(your enrollment)")
-                    user_id = inst.get("canvas_user_id", "")
-                    if user_id:
-                        typer.echo(
-                            f"  - {name} (ID: {user_id}) - {inst['role']}, {inst['enrollment_state']}"
-                        )
-                    else:
-                        typer.echo(f"  - Role: {inst['role']}, State: {inst['enrollment_state']}")
-            else:
-                typer.echo("  (none - run 'cl ingest offering' to fetch instructor enrollments)")
-            typer.echo("")
-
-            typer.secho("Declared Lead:", bold=True)
-            if resp.declared_lead:
-                person_name = resp.declared_lead.get("person_name", "(unknown)")
-                typer.echo(f"  {person_name} (ID: {resp.declared_lead['person_canvas_id']})")
-                typer.echo(f"  Designation: {resp.declared_lead['designation']}")
-                typer.echo(f"  Added: {resp.declared_lead['created_at']}")
-            else:
-                typer.echo("  (not set - use 'cl annotate lead' to declare)")
+        _handle_offering_instructors(offering_id, fmt, settings)
     else:
-        # Show basic offering info
-        data = off.to_dict()
-        if fmt == OutputFormat.json:
-            format_output(data, fmt="json")
-        elif fmt == OutputFormat.csv:
-            format_output([data], fmt="csv")
-        else:
-            typer.echo(f"Name: {off.name}")
-            typer.echo(f"Code: {off.code or '(none)'}")
-            typer.echo(f"Canvas ID: {off.canvas_course_id}")
-            typer.echo(f"Workflow State: {off.workflow_state}")
+        _handle_offering_info(off, fmt)
+
+
+def _handle_offering_roster(offering_id: int, fmt: OutputFormat, settings: Any) -> None:
+    """Handle --roster flag: show roster grouped by section."""
+    roster_data = get_offering_roster(settings.db_path, offering_id)
+    if roster_data is None:
+        cli_error(f"Offering {offering_id} not found.")
+
+    if not roster_data.sections:
+        typer.echo(
+            f"No enrollments found for offering {offering_id}.\n"
+            "Run 'cl ingest offering <id>' to fetch enrollment data."
+        )
+        return
+
+    if fmt == OutputFormat.json:
+        format_output(roster_data.to_dict(), fmt="json")
+    elif fmt == OutputFormat.csv:
+        _handle_roster_csv(roster_data)
+    else:
+        _handle_roster_table(roster_data)
+
+
+def _handle_roster_csv(roster_data: Any) -> None:
+    """Output roster as CSV."""
+    rows = []
+    for _section_name, entries in roster_data.sections.items():
+        for entry in entries:
+            rows.append(entry.to_dict())
+    headers = [
+        "section_name",
+        "person_name",
+        "canvas_user_id",
+        "role",
+        "enrollment_state",
+    ]
+    format_output(rows, fmt="csv", headers=headers)
+
+
+def _handle_roster_table(roster_data: Any) -> None:
+    """Output roster as table grouped by section."""
+    typer.echo(f"Roster for: {roster_data.offering_name}")
+    typer.echo(f"Code: {roster_data.offering_code or '(none)'}")
+    typer.echo(f"Canvas ID: {roster_data.canvas_course_id}")
+    typer.echo("")
+
+    for section_name, entries in sorted(roster_data.sections.items()):
+        typer.secho(f"Section: {section_name} ({len(entries)} enrollments)", bold=True)
+        for entry in entries:
+            grade_info = ""
+            if entry.current_grade or entry.final_grade:
+                grade_info = f" [{entry.current_grade or entry.final_grade}]"
             typer.echo(
-                f"Observed At: {off.observed_at.isoformat() if off.observed_at else '(unknown)'}"
+                f"  - {entry.person_name} ({entry.role}, {entry.enrollment_state}){grade_info}"
             )
-            typer.echo(
-                f"Last Seen At: {off.last_seen_at.isoformat() if off.last_seen_at else '(unknown)'}"
-            )
+        typer.echo("")
+
+
+def _handle_offering_instructors(offering_id: int, fmt: OutputFormat, settings: Any) -> None:
+    """Handle --instructors flag: show instructor responsibility information."""
+    resp = get_offering_responsibility(settings.db_path, offering_id)
+    if resp is None:
+        cli_error(f"Could not get responsibility info for offering {offering_id}.")
+
+    if fmt == OutputFormat.json:
+        format_output(resp.to_dict(), fmt="json")
+    elif fmt == OutputFormat.csv:
+        _handle_instructors_csv(resp)
+    else:
+        _handle_instructors_table(resp)
+
+
+def _handle_instructors_csv(resp: Any) -> None:
+    """Output instructors as CSV."""
+    rows = []
+    for inst in resp.observed_instructors:
+        rows.append(
+            {
+                "canvas_course_id": resp.canvas_course_id,
+                "offering_name": resp.offering_name,
+                "canvas_user_id": inst.get("canvas_user_id", ""),
+                "person_name": inst.get("person_name", "(your enrollment)"),
+                "role": inst["role"],
+                "enrollment_state": inst["enrollment_state"],
+                "source": inst["source"],
+                "is_declared_lead": "yes"
+                if resp.declared_lead
+                and inst.get("canvas_user_id") == resp.declared_lead.get("person_canvas_id")
+                else "no",
+            }
+        )
+    if not rows:
+        rows = [
+            {
+                "canvas_course_id": resp.canvas_course_id,
+                "offering_name": resp.offering_name,
+                "note": "No instructors found",
+            }
+        ]
+    format_output(rows, fmt="csv")
+
+
+def _handle_instructors_table(resp: Any) -> None:
+    """Output instructors as table."""
+    typer.echo(f"Offering: {resp.offering_name}")
+    typer.echo(f"Code: {resp.offering_code or '(none)'}")
+    typer.echo(f"Canvas ID: {resp.canvas_course_id}")
+    typer.echo("")
+
+    typer.secho("Observed Instructors:", bold=True)
+    if resp.observed_instructors:
+        for inst in resp.observed_instructors:
+            name = inst.get("person_name", "(your enrollment)")
+            user_id = inst.get("canvas_user_id", "")
+            if user_id:
+                typer.echo(
+                    f"  - {name} (ID: {user_id}) - {inst['role']}, {inst['enrollment_state']}"
+                )
+            else:
+                typer.echo(f"  - Role: {inst['role']}, State: {inst['enrollment_state']}")
+    else:
+        typer.echo("  (none - run 'cl ingest offering' to fetch instructor enrollments)")
+    typer.echo("")
+
+    typer.secho("Declared Lead:", bold=True)
+    if resp.declared_lead:
+        person_name = resp.declared_lead.get("person_name", "(unknown)")
+        typer.echo(f"  {person_name} (ID: {resp.declared_lead['person_canvas_id']})")
+        typer.echo(f"  Designation: {resp.declared_lead['designation']}")
+        typer.echo(f"  Added: {resp.declared_lead['created_at']}")
+    else:
+        typer.echo("  (not set - use 'cl annotate lead' to declare)")
+
+
+def _handle_offering_info(off: Any, fmt: OutputFormat) -> None:
+    """Handle default: show basic offering info."""
+    data = off.to_dict()
+    if fmt == OutputFormat.json:
+        format_output(data, fmt="json")
+    elif fmt == OutputFormat.csv:
+        format_output([data], fmt="csv")
+    else:
+        typer.echo(f"Name: {off.name}")
+        typer.echo(f"Code: {off.code or '(none)'}")
+        typer.echo(f"Canvas ID: {off.canvas_course_id}")
+        typer.echo(f"Workflow State: {off.workflow_state}")
+        typer.echo(
+            f"Observed At: {off.observed_at.isoformat() if off.observed_at else '(unknown)'}"
+        )
+        typer.echo(
+            f"Last Seen At: {off.last_seen_at.isoformat() if off.last_seen_at else '(unknown)'}"
+        )
 
 
 @app.command("person")
@@ -343,25 +378,24 @@ def person(
 ) -> None:
     """Query enrollment history for a person.
 
-    Shows all enrollments for the specified person across offerings
-    that have been deep-ingested. Sorted by term (most recent first).
+    Answers: "What courses has this person taken?" and "How did they do?"
 
-    Use --grades to show a performance summary (student enrollments only,
-    with grade data emphasized). This answers: "How did this person do?"
+    Shows all enrollments for a person across deep-ingested offerings,
+    sorted by term (most recent first).
+    \b
+    Modes:
+      (default)   Full enrollment history (all roles)
+      --grades    Performance summary (student enrollments + grades only)
+      --alias     Filter to offerings in a specific course alias
 
-    Use --alias to filter results to only offerings in a specific alias.
-    This is useful for tracking a person's history with a logical course
-    that has multiple offerings over time.
-
-    Note: This only shows data from offerings that have been deep-ingested.
-    Run 'cl ingest offering <id>' for each offering you want to include.
-
+    Requires deep ingestion: Only shows data from courses where you've
+    run 'cl ingest offering <id>'.
+    \b
     Examples:
-        cl query person 12345
-        cl query person 12345 --grades
-        cl query person 12345 --grades --format json
-        cl query person 12345 --format csv
-        cl query person 12345 --alias "BET 3510"
+      cl query person 12345                   # Full history
+      cl query person 12345 --grades          # Just grades
+      cl query person 12345 --alias "CS 101"  # Filter by alias
+      cl query person 12345 --format csv > student_history.csv
     """
     settings = load_settings()
 
@@ -580,13 +614,17 @@ def alias_query(
 ) -> None:
     """Query all offerings in a course alias.
 
-    Shows all offerings grouped under the specified alias, with term
-    information and your enrollment data where available. This is the
-    primary answer to: "What is the history of this course identity?"
+    Answers: "What is the history of this course across renumberings?"
 
+    Course aliases let you group related offerings (e.g., a course that
+    was renumbered, or special topics instances that are logically the
+    same course). This shows all offerings in that group.
+
+    Create aliases with 'cl annotate alias create'.
+    \b
     Examples:
-        cl query alias "BET 3510"
-        cl query alias "Intro Programming" --format json
+      cl query alias "BET 3510"
+      cl query alias "Intro Programming" --format json
     """
     settings = load_settings()
 
@@ -656,7 +694,12 @@ def alias_query(
 
 drift_app = typer.Typer(
     name="drift",
-    help="Query change history (drift) for entities.",
+    help="""Query change history (drift) for entities.
+
+Every time you re-ingest data, changes are tracked: enrollment state changes,
+grade updates, name changes, adds and drops. Use these commands to see what
+changed over time.
+""",
     no_args_is_help=True,
 )
 app.add_typer(drift_app)
@@ -679,13 +722,14 @@ def drift_person(
 ) -> None:
     """Query drift history for a person.
 
-    Shows all recorded changes for the person and their enrollments
-    across ingestion runs. Useful for understanding how a student's
-    enrollment status or grades have changed over time.
+    Answers: "What changed for this person over time?"
 
+    Shows recorded changes for a person's enrollments across ingestion runs:
+    enrollment state changes (active→completed), grade updates, role changes.
+    \b
     Examples:
-        cl query drift person 12345
-        cl query drift person 12345 --format json
+      cl query drift person 12345
+      cl query drift person 12345 --format json
     """
     settings = load_settings()
 
@@ -754,13 +798,14 @@ def drift_offering(
 ) -> None:
     """Query drift history for an offering.
 
-    Shows all recorded changes for the offering, including its
-    sections and enrollments across ingestion runs. Useful for
-    tracking enrollment changes like adds, drops, and state transitions.
+    Answers: "What changed in this course over time?"
 
+    Shows recorded changes for the course and its enrollments: adds, drops,
+    state transitions, grade updates, section changes.
+    \b
     Examples:
-        cl query drift offering 12345
-        cl query drift offering 12345 --format json
+      cl query drift offering 12345
+      cl query drift offering 12345 --format json
     """
     settings = load_settings()
 

@@ -26,13 +26,13 @@ from cl.annotations.manager import (
     remove_annotation,
     remove_from_alias,
 )
-from cl.cli.main import cli_error, cli_success
+from cl.cli.output import cli_error, cli_success
 from cl.config.settings import load_settings
 from cl.export.formatters import format_output
 
 app = typer.Typer(
     name="annotate",
-    help="Manage annotations (declared truth).",
+    help="Manage annotations (your declared truth vs Canvas observed truth). Record corrections without changing what Canvas reports—both views are preserved.",
     no_args_is_help=True,
 )
 
@@ -65,12 +65,13 @@ def lead(
 ) -> None:
     """Declare the lead/grade-responsible instructor for an offering.
 
-    This annotation clarifies who is primarily responsible for the course
-    when Canvas data shows multiple instructors or when the Canvas role
-    doesn't reflect reality.
-
-    Example:
-        cl annotate lead 12345 67890 --designation lead
+    Use when Canvas shows multiple instructors but doesn't indicate who
+    was actually responsible for the course. This annotation is shown
+    alongside observed Canvas roles in query output.
+    \b
+    Examples:
+      cl annotate lead 12345 67890                    # Mark as lead
+      cl annotate lead 12345 67890 -d grade_responsible
     """
     _ensure_db_exists()
     settings = load_settings()
@@ -240,7 +241,13 @@ def remove(
 
 alias_app = typer.Typer(
     name="alias",
-    help="Manage course aliases (group related offerings).",
+    help="""Manage course aliases (group related offerings under one name).
+
+Aliases solve the "same course, different IDs" problem: course renumberings,
+special topics taught as different courses, cross-listed courses.
+
+Create an alias, add offerings to it, then query with 'cl query alias'.
+""",
     no_args_is_help=True,
 )
 app.add_typer(alias_app)

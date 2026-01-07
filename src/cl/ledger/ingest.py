@@ -60,9 +60,11 @@ class IngestResult:
 
     @property
     def total_count(self) -> int:
+        """Total number of records processed (new + updated + unchanged)."""
         return self.new_count + self.updated_count + self.unchanged_count
 
     def to_dict(self) -> dict[str, Any]:
+        """Convert result to dictionary for serialization."""
         return {
             "run_id": self.run_id,
             "new_count": self.new_count,

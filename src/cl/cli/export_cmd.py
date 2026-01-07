@@ -10,7 +10,7 @@ from typing import Annotated
 
 import typer
 
-from cl.cli.main import cli_error
+from cl.cli.output import cli_error
 from cl.config.settings import load_settings
 from cl.export.formatters import format_output
 from cl.ledger.queries import (
@@ -23,7 +23,7 @@ from cl.ledger.queries import (
 
 app = typer.Typer(
     name="export",
-    help="Export data in structured formats.",
+    help="Export data in JSON or CSV for use by other tools. Output goes to stdout for piping to files or other commands.",
     no_args_is_help=True,
 )
 
@@ -48,9 +48,12 @@ def offerings(
 ) -> None:
     """Export all offerings with term information.
 
-    Exports offering data suitable for use by other tools.
-    Includes Canvas course ID, name, code, workflow state,
-    and term information.
+    Outputs your complete course catalog: Canvas ID, name, code, term, dates.
+    Useful for creating course inventories or feeding data to other systems.
+    \b
+    Examples:
+      cl export offerings > courses.json
+      cl export offerings --format csv > courses.csv
     """
     settings = load_settings()
 

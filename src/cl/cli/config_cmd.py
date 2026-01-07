@@ -24,7 +24,13 @@ from cl.config.settings import (
 
 app = typer.Typer(
     name="config",
-    help="Manage canvas-ledger configuration.",
+    help="""Manage canvas-ledger configuration.
+
+Configuration is stored in ~/.config/cl/config.toml. API tokens are NEVER
+stored in the config file—use environment variables or 1Password.
+
+Start here: Run 'cl config init' to set up your Canvas URL and token source.
+""",
     no_args_is_help=True,
 )
 
@@ -64,9 +70,16 @@ def config_init(
 ) -> None:
     """Initialize canvas-ledger configuration.
 
-    Creates a config file with Canvas URL and other settings.
-    API tokens are NOT stored in the config file - use environment
-    variables or 1Password instead.
+    Creates a config file at ~/.config/cl/config.toml with your Canvas URL
+    and token retrieval settings.
+    \b
+    Token options (choose one):
+      • Environment variable: export CANVAS_API_TOKEN='your-token'
+      • 1Password CLI: Use --secret-provider=1password --op-reference=op://...
+    \b
+    Examples:
+      cl config init --canvas-url https://canvas.auburn.edu
+      cl config init -u canvas.auburn.edu -s 1password -o op://Dev/Canvas/token
     """
     config_path = get_default_config_path()
 

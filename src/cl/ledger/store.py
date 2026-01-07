@@ -59,6 +59,7 @@ def get_engine(db_path: Path | str, echo: bool = False) -> Engine:
         dbapi_connection: DBAPIConnection,
         _connection_record: ConnectionPoolEntry,
     ) -> None:
+        """Set SQLite pragmas for WAL mode, foreign keys, and busy timeout."""
         cursor = dbapi_connection.cursor()
         # WAL mode for better concurrency
         cursor.execute("PRAGMA journal_mode=WAL")

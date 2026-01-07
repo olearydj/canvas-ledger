@@ -1,0 +1,71 @@
+site_name: canvas-ledger
+site_url: https://olearydj.github.io/canvas-ledger/
+site_description: A local, queryable ledger of Canvas LMS metadata for historical analysis
+site_author: Dan O'Leary
+
+repo_url: https://github.com/olearydj/canvas-ledger
+repo_name: canvas-ledger
+edit_uri: edit/main/mkdocs/docs/
+
+docs_dir: mkdocs/docs
+site_dir: mkdocs/site
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocs-typer2:
+      pretty: true
+
+nav:
+  - Home: index.md
+  - Concepts: concepts.md
+  - Data Model: data-model.md
+  - Quickstart: quickstart.md
+  - Workflows:
+    - Semester Start: workflows/semester-start.md
+    - Mid-Semester: workflows/mid-semester.md
+    - Retrospective: workflows/retrospective.md
+  - CLI Reference: cli/reference.md
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+  - tables

@@ -6,7 +6,10 @@ Provides the root Typer application with version flag and error handling.
 from __future__ import annotations
 
 import logging
-from typing import Never
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
 
 import typer
 
@@ -15,9 +18,9 @@ from cl import __version__
 # Create main application
 app: typer.Typer = typer.Typer(
     name="cl",
-    help="canvas-ledger: A local, queryable ledger of Canvas LMS metadata.",
     no_args_is_help=True,
     add_completion=False,
+    rich_markup_mode="rich",
 )
 
 
@@ -62,28 +65,32 @@ def main(
 ) -> None:
     """canvas-ledger: A local, queryable ledger of Canvas LMS metadata.
 
-    Maintain a durable historical record of your Canvas involvement,
-    enrollments, and related metadata for answering questions that
-    Canvas cannot easily answer.
+    Build a durable historical record of your Canvas courses, enrollments,
+    and roles. Answer questions that Canvas itself cannot easily answer:
+    \b
+    • What courses have I taught or taken, and when?
+    • What was a student's enrollment history across my courses?
+    • Who was the lead instructor for a co-taught course?
+    • How did enrollment change over time (adds, drops)?
+    • How did a student perform across multiple courses?
+
+    Data is stored locally in SQLite. Canvas is read-only—this tool never
+    modifies your Canvas data. You can annotate records with "declared truth"
+    (like who was really the lead instructor) without changing what Canvas reports.
+    \b
+    Getting Started:
+      1. cl config init        Configure Canvas URL and API token
+      2. cl db migrate         Initialize the local database
+      3. cl ingest catalog     Fetch all your Canvas courses
+      4. cl query my-timeline  See your involvement history
     """
     pass
 
 
-def cli_error(message: str, exit_code: int = 1) -> Never:
-    """Print error message to stderr and exit."""
-    typer.secho(f"Error: {message}", fg=typer.colors.RED, err=True)
-    raise typer.Exit(exit_code)
+# Re-export output utilities for backward compatibility
+from cl.cli.output import cli_error, cli_success, cli_warning
 
-
-def cli_success(message: str) -> None:
-    """Print success message."""
-    typer.secho(message, fg=typer.colors.GREEN)
-
-
-def cli_warning(message: str) -> None:
-    """Print warning message."""
-    typer.secho(f"Warning: {message}", fg=typer.colors.YELLOW, err=True)
-
+__all__ = ["app", "cli_error", "cli_success", "cli_warning"]
 
 # Import and register command groups
 # These imports are at the bottom to avoid circular imports

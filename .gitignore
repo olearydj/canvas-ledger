@@ -57,3 +57,6 @@ Thumbs.db
 
 # Local config (user-specific paths)
 *.local.toml
+
+# MkDocs build output
+mkdocs/site/
