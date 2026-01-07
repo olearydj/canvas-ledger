@@ -1,0 +1,1881 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A local, queryable ledger of Canvas LMS metadata for historical analysis">
+      
+      
+        <meta name="author" content="Dan O'Leary">
+      
+      
+        <link rel="canonical" href="https://olearydj.github.io/canvas-ledger/data-model/">
+      
+      
+        <link rel="prev" href="../concepts/">
+      
+      
+        <link rel="next" href="../quickstart/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Data Model - canvas-ledger</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#data-model" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="canvas-ledger" class="md-header__button md-logo" aria-label="canvas-ledger" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            canvas-ledger
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Data Model
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/olearydj/canvas-ledger" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    canvas-ledger
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../concepts/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Concepts
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Data Model
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../quickstart/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Quickstart
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../workflows/semester-start/" class="md-tabs__link">
+          
+  
+  
+  Workflows
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../cli/reference/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  CLI Reference
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="canvas-ledger" class="md-nav__button md-logo" aria-label="canvas-ledger" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    canvas-ledger
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/olearydj/canvas-ledger" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    canvas-ledger
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#file-locations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Locations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File Locations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#whats-in-the-config-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's in the Config File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#database-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database File
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#entity-relationship-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Entity Relationship Diagram
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#observed-data-from-canvas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observed Data (from Canvas)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Observed Data (from Canvas)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#term" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Term
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#offering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Section
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#person" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Person
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enrollment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enrollment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#userenrollment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UserEnrollment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#declared-data-your-annotations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Declared Data (Your Annotations)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Declared Data (Your Annotations)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leadinstructorannotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LeadInstructorAnnotation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#involvementannotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        InvolvementAnnotation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coursealias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CourseAlias
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coursealiasoffering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CourseAliasOffering
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#history-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        History Tracking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="History Tracking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ingestrun" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IngestRun
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changelog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ChangeLog
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timestamps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timestamps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#canvas-ids-vs-internal-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canvas IDs vs Internal IDs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspecting-the-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspecting the Database
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Workflows
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/semester-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Semester Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/mid-semester/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mid-Semester
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/retrospective/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Retrospective
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#file-locations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Locations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File Locations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#whats-in-the-config-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's in the Config File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#database-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database File
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#entity-relationship-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Entity Relationship Diagram
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#observed-data-from-canvas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observed Data (from Canvas)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Observed Data (from Canvas)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#term" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Term
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#offering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#section" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Section
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#person" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Person
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enrollment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enrollment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#userenrollment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UserEnrollment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#declared-data-your-annotations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Declared Data (Your Annotations)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Declared Data (Your Annotations)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leadinstructorannotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LeadInstructorAnnotation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#involvementannotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        InvolvementAnnotation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coursealias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CourseAlias
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coursealiasoffering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CourseAliasOffering
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#history-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        History Tracking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="History Tracking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ingestrun" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IngestRun
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changelog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ChangeLog
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timestamps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timestamps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#canvas-ids-vs-internal-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canvas IDs vs Internal IDs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspecting-the-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspecting the Database
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="data-model">Data Model<a class="headerlink" href="#data-model" title="Permanent link">&para;</a></h1>
+<p>Understanding what canvas-ledger tracks and where it stores data.</p>
+<h2 id="file-locations">File Locations<a class="headerlink" href="#file-locations" title="Permanent link">&para;</a></h2>
+<p>canvas-ledger stores all data locally. Here's where everything lives:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Default Location</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Configuration</strong></td>
+<td><code>~/.config/cl/config.toml</code></td>
+<td>Canvas URL, database path, preferences</td>
+</tr>
+<tr>
+<td><strong>Database</strong></td>
+<td><code>~/.local/share/cl/ledger.db</code></td>
+<td>All observed and declared data</td>
+</tr>
+<tr>
+<td><strong>Backups</strong></td>
+<td><code>~/.local/share/cl/ledger.db.backup.*</code></td>
+<td>Auto-created before migrations</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition tip">
+<p class="admonition-title">Custom Locations</p>
+<p>You can customize the database path in your config file:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">[database]</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/path/to/your/ledger.db&quot;</span>
+</code></pre></div></p>
+</div>
+<h3 id="whats-in-the-config-file">What's in the Config File<a class="headerlink" href="#whats-in-the-config-file" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># ~/.config/cl/config.toml</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">[canvas]</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">base_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;https://auburn.instructure.com&quot;</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">[database]</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;~/.local/share/cl/ledger.db&quot;</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="k">[secrets]</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">provider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;env&quot;</span><span class="w">  </span><span class="c1"># or &quot;1password&quot;</span>
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Tokens Are Never Stored Here</p>
+<p>Your Canvas API token is retrieved from environment variables (<code>CANVAS_API_TOKEN</code>) or 1Password—never written to the config file.</p>
+</div>
+<h3 id="database-file">Database File<a class="headerlink" href="#database-file" title="Permanent link">&para;</a></h3>
+<p>The database is a standard SQLite file. You can:</p>
+<ul>
+<li><strong>Back it up</strong>: Just copy the file</li>
+<li><strong>Inspect it</strong>: Open with any SQLite tool (DB Browser, <code>sqlite3</code> CLI, etc.)</li>
+<li><strong>Move it</strong>: Copy to another machine and update your config</li>
+<li><strong>Version control it</strong>: If you want history of your ledger itself</li>
+</ul>
+<h2 id="entity-relationship-diagram">Entity Relationship Diagram<a class="headerlink" href="#entity-relationship-diagram" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>erDiagram
+    Term ||--o{ Offering : "has"
+    Offering ||--o{ Section : "contains"
+    Offering ||--o{ UserEnrollment : "your roles"
+    Offering ||--o{ Enrollment : "all enrollments"
+    Section ||--o{ Enrollment : "assigned to"
+    Person ||--o{ Enrollment : "enrolled as"
+    IngestRun ||--o{ ChangeLog : "records"
+
+    CourseAlias ||--o{ CourseAliasOffering : "groups"
+    Offering ||--o{ CourseAliasOffering : "belongs to"
+
+    Term {
+        int canvas_term_id PK
+        string name
+        datetime start_date
+        datetime end_date
+    }
+
+    Offering {
+        int canvas_course_id PK
+        string name
+        string code
+        int term_id FK
+        string workflow_state
+    }
+
+    Section {
+        int canvas_section_id PK
+        int offering_id FK
+        string name
+        string sis_section_id
+    }
+
+    Person {
+        int canvas_user_id PK
+        string name
+        string sortable_name
+        string sis_user_id
+        string login_id
+    }
+
+    UserEnrollment {
+        int canvas_enrollment_id PK
+        int offering_id FK
+        string role
+        string enrollment_state
+    }
+
+    Enrollment {
+        int canvas_enrollment_id PK
+        int offering_id FK
+        int section_id FK
+        int person_id FK
+        string role
+        string enrollment_state
+        string current_grade
+        float current_score
+        string final_grade
+        float final_score
+    }
+
+    IngestRun {
+        int id PK
+        datetime started_at
+        datetime completed_at
+        string scope
+        string status
+        int drift_count
+    }
+
+    ChangeLog {
+        int id PK
+        string entity_type
+        int entity_canvas_id
+        string field_name
+        string old_value
+        string new_value
+        int ingest_run_id FK
+    }
+
+    CourseAlias {
+        int id PK
+        string name UK
+        string description
+    }
+
+    CourseAliasOffering {
+        int id PK
+        int alias_id FK
+        int offering_canvas_id
+    }</code></pre>
+<h2 id="observed-data-from-canvas">Observed Data (from Canvas)<a class="headerlink" href="#observed-data-from-canvas" title="Permanent link">&para;</a></h2>
+<p>These entities store data exactly as Canvas reports it.</p>
+<h3 id="term">Term<a class="headerlink" href="#term" title="Permanent link">&para;</a></h3>
+<p>Academic periods (semesters, quarters, etc.).</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>canvas_term_id</code></td>
+<td>Canvas's unique identifier</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>Term name (e.g., "Fall 2024")</td>
+</tr>
+<tr>
+<td><code>start_date</code> / <code>end_date</code></td>
+<td>Term boundaries</td>
+</tr>
+<tr>
+<td><code>observed_at</code></td>
+<td>When first seen</td>
+</tr>
+<tr>
+<td><code>last_seen_at</code></td>
+<td>When last confirmed</td>
+</tr>
+</tbody>
+</table>
+<h3 id="offering">Offering<a class="headerlink" href="#offering" title="Permanent link">&para;</a></h3>
+<p>A specific course instance (what Canvas calls a "course").</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>canvas_course_id</code></td>
+<td>Canvas's unique identifier</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>Course title</td>
+</tr>
+<tr>
+<td><code>code</code></td>
+<td>Course code (e.g., "COMP 1234")</td>
+</tr>
+<tr>
+<td><code>term_id</code></td>
+<td>Link to Term</td>
+</tr>
+<tr>
+<td><code>workflow_state</code></td>
+<td>Status: available, completed, deleted</td>
+</tr>
+</tbody>
+</table>
+<h3 id="section">Section<a class="headerlink" href="#section" title="Permanent link">&para;</a></h3>
+<p>Subdivisions within an offering.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>canvas_section_id</code></td>
+<td>Canvas's unique identifier</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>Section name (e.g., "Section 001")</td>
+</tr>
+<tr>
+<td><code>sis_section_id</code></td>
+<td>Institutional identifier if available</td>
+</tr>
+</tbody>
+</table>
+<h3 id="person">Person<a class="headerlink" href="#person" title="Permanent link">&para;</a></h3>
+<p>Any user encountered through enrollments.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>canvas_user_id</code></td>
+<td>Canvas's unique identifier</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>Display name</td>
+</tr>
+<tr>
+<td><code>sortable_name</code></td>
+<td>Last, First format</td>
+</tr>
+<tr>
+<td><code>sis_user_id</code></td>
+<td>Institutional ID (e.g., student ID)</td>
+</tr>
+<tr>
+<td><code>login_id</code></td>
+<td>Login username</td>
+</tr>
+</tbody>
+</table>
+<h3 id="enrollment">Enrollment<a class="headerlink" href="#enrollment" title="Permanent link">&para;</a></h3>
+<p>A person's enrollment in an offering (deep ingestion).</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>canvas_enrollment_id</code></td>
+<td>Canvas's unique identifier</td>
+</tr>
+<tr>
+<td><code>role</code></td>
+<td>Role type: StudentEnrollment, TeacherEnrollment, TaEnrollment, etc.</td>
+</tr>
+<tr>
+<td><code>enrollment_state</code></td>
+<td>Status: active, invited, completed, deleted</td>
+</tr>
+<tr>
+<td><code>current_grade</code></td>
+<td>Letter grade as of ingestion (e.g., "B+")</td>
+</tr>
+<tr>
+<td><code>current_score</code></td>
+<td>Numeric score as of ingestion (e.g., 87.5)</td>
+</tr>
+<tr>
+<td><code>final_grade</code></td>
+<td>Final letter grade if concluded</td>
+</tr>
+<tr>
+<td><code>final_score</code></td>
+<td>Final numeric score if concluded</td>
+</tr>
+</tbody>
+</table>
+<h3 id="userenrollment">UserEnrollment<a class="headerlink" href="#userenrollment" title="Permanent link">&para;</a></h3>
+<p>Your own enrollments (catalog ingestion only).</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>role</code></td>
+<td>Your role: teacher, ta, student, designer, observer</td>
+</tr>
+<tr>
+<td><code>enrollment_state</code></td>
+<td>Status: active, completed, etc.</td>
+</tr>
+</tbody>
+</table>
+<p>This is a lightweight version of Enrollment, populated during catalog ingestion before you deep-ingest specific offerings.</p>
+<h2 id="declared-data-your-annotations">Declared Data (Your Annotations)<a class="headerlink" href="#declared-data-your-annotations" title="Permanent link">&para;</a></h2>
+<p>These entities store your corrections and classifications.</p>
+<h3 id="leadinstructorannotation">LeadInstructorAnnotation<a class="headerlink" href="#leadinstructorannotation" title="Permanent link">&para;</a></h3>
+<p>Declares who was lead/grade-responsible for an offering.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>offering_canvas_id</code></td>
+<td>Which offering</td>
+</tr>
+<tr>
+<td><code>person_canvas_id</code></td>
+<td>Who is lead</td>
+</tr>
+<tr>
+<td><code>designation</code></td>
+<td>"lead" or "grade_responsible"</td>
+</tr>
+</tbody>
+</table>
+<h3 id="involvementannotation">InvolvementAnnotation<a class="headerlink" href="#involvementannotation" title="Permanent link">&para;</a></h3>
+<p>Classifies your involvement beyond what Canvas shows.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>offering_canvas_id</code></td>
+<td>Which offering</td>
+</tr>
+<tr>
+<td><code>classification</code></td>
+<td>Free text: "developed course", "guest lecturer", etc.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="coursealias">CourseAlias<a class="headerlink" href="#coursealias" title="Permanent link">&para;</a></h3>
+<p>Groups related offerings under a common name.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>The alias (e.g., "intro-computing")</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td>Optional explanation</td>
+</tr>
+</tbody>
+</table>
+<h3 id="coursealiasoffering">CourseAliasOffering<a class="headerlink" href="#coursealiasoffering" title="Permanent link">&para;</a></h3>
+<p>Links offerings to aliases (many-to-many).</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>alias_id</code></td>
+<td>Which alias</td>
+</tr>
+<tr>
+<td><code>offering_canvas_id</code></td>
+<td>Which offering</td>
+</tr>
+</tbody>
+</table>
+<h2 id="history-tracking">History Tracking<a class="headerlink" href="#history-tracking" title="Permanent link">&para;</a></h2>
+<h3 id="ingestrun">IngestRun<a class="headerlink" href="#ingestrun" title="Permanent link">&para;</a></h3>
+<p>Metadata about each ingestion operation.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scope</code></td>
+<td>"catalog" or "offering"</td>
+</tr>
+<tr>
+<td><code>scope_detail</code></td>
+<td>For offerings: which course ID</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>running, completed, failed</td>
+</tr>
+<tr>
+<td><code>new_count</code></td>
+<td>Records created</td>
+</tr>
+<tr>
+<td><code>updated_count</code></td>
+<td>Records modified</td>
+</tr>
+<tr>
+<td><code>unchanged_count</code></td>
+<td>Records unchanged</td>
+</tr>
+<tr>
+<td><code>drift_count</code></td>
+<td>Changes detected</td>
+</tr>
+</tbody>
+</table>
+<h3 id="changelog">ChangeLog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h3>
+<p>Records every field change across ingestion runs.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>entity_type</code></td>
+<td>What changed: term, offering, enrollment, etc.</td>
+</tr>
+<tr>
+<td><code>entity_canvas_id</code></td>
+<td>Canvas ID of the changed entity</td>
+</tr>
+<tr>
+<td><code>field_name</code></td>
+<td>Which field changed</td>
+</tr>
+<tr>
+<td><code>old_value</code></td>
+<td>Previous value</td>
+</tr>
+<tr>
+<td><code>new_value</code></td>
+<td>New value</td>
+</tr>
+<tr>
+<td><code>ingest_run_id</code></td>
+<td>Which ingestion detected this</td>
+</tr>
+</tbody>
+</table>
+<p>This enables drift queries like "what changed for this student?" or "what changed in this course?"</p>
+<h2 id="timestamps">Timestamps<a class="headerlink" href="#timestamps" title="Permanent link">&para;</a></h2>
+<p>Every observed entity includes:</p>
+<ul>
+<li><strong><code>observed_at</code></strong>: When the record was first created</li>
+<li><strong><code>last_seen_at</code></strong>: When the record was last confirmed in Canvas</li>
+</ul>
+<p>If <code>last_seen_at</code> is old while other records are recent, the entity may have been removed from Canvas (but is preserved in your ledger).</p>
+<h2 id="canvas-ids-vs-internal-ids">Canvas IDs vs Internal IDs<a class="headerlink" href="#canvas-ids-vs-internal-ids" title="Permanent link">&para;</a></h2>
+<p>Annotations reference <strong>Canvas IDs</strong> (not internal database IDs). This means:</p>
+<ul>
+<li>Annotations survive if you delete and re-ingest offerings</li>
+<li>You can add annotations for users not yet in your ledger</li>
+<li>The ledger remains portable across database rebuilds</li>
+</ul>
+<h2 id="inspecting-the-database">Inspecting the Database<a class="headerlink" href="#inspecting-the-database" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Open with sqlite3 CLI</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>sqlite3<span class="w"> </span>~/.local/share/cl/ledger.db
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># List tables</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>.tables
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># See schema</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>.schema<span class="w"> </span>offering
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># Query directly</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>SELECT<span class="w"> </span>name,<span class="w"> </span>code<span class="w"> </span>FROM<span class="w"> </span>offering<span class="w"> </span>WHERE<span class="w"> </span>code<span class="w"> </span>LIKE<span class="w"> </span><span class="s1">&#39;COMP%&#39;</span><span class="p">;</span>
+</code></pre></div>
+<p>Or use a GUI tool like <a href="https://sqlitebrowser.org/">DB Browser for SQLite</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.suggest", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
